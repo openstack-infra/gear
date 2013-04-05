@@ -49,10 +49,10 @@ types = {
     34: 'SUBMIT_JOB_LOW_BG',
     35: 'SUBMIT_JOB_SCHED',
     36: 'SUBMIT_JOB_EPOCH',
-    }
+}
 
 for i, name in types.items():
-    globals()[name]=i
+    globals()[name] = i
 
 REQ = '\x00REQ'
 RES = '\x00RES'

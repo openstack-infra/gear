@@ -12,19 +12,19 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
-import struct
-import socket
-import threading
-import select
-import os
-import time
 import logging
+import os
+import select
+import socket
+import struct
+import threading
+import time
 
-import constants
+from gear import constants
 
-PRECEDENCE_NORMAL=0
-PRECEDENCE_LOW=1
-PRECEDENCE_HIGH=2
+PRECEDENCE_NORMAL = 0
+PRECEDENCE_LOW = 1
+PRECEDENCE_HIGH = 2
 
 
 class ConnectionError(Exception):
@@ -74,19 +74,19 @@ class Connection(object):
             af, socktype, proto, canonname, sa = res
             try:
                 s = socket.socket(af, socktype, proto)
-            except socket.error as msg:
+            except socket.error:
                 s = None
                 continue
             try:
                 s.connect(sa)
-            except socket.error as msg:
+            except socket.error:
                 s.close()
                 s = None
                 continue
             break
         if s is None:
             self.log.debug("Error connecting to %s port %s" % (
-                    self.host, self.port))
+                self.host, self.port))
             raise ConnectionError("Unable to open socket")
         self.log.debug("Connected to %s port %s" % (self.host, self.port))
         self.conn = s
@@ -149,6 +149,7 @@ class Packet(object):
             raise UnknownJobError()
         return job
 
+
 class Client(object):
     log = logging.getLogger("gear.Client")
 
@@ -168,7 +169,7 @@ class Client(object):
                                             target=self._doPollLoop)
         self.poll_thread.start()
         self.connect_thread = threading.Thread(name="Gearman client connect",
-                                            target=self._doConnectLoop)
+                                               target=self._doConnectLoop)
         self.connect_thread.start()
 
     def __repr__(self):
@@ -238,7 +239,7 @@ class Client(object):
                 if not self._connectLoop():
                     # Nothing happened
                     time.sleep(2)
-            except:
+            except Exception:
                 self.log.exception("Exception in connect loop:")
 
     def _connectLoop(self):
@@ -252,7 +253,7 @@ class Client(object):
             except ConnectionError:
                 self.log.debug("Unable to connect to %s" % conn)
                 continue
-            except:
+            except Exception:
                 self.log.error("Exception while connecting to %s" % conn)
                 continue
             self.connections_condition.acquire()
@@ -309,7 +310,7 @@ class Client(object):
             self.connections_condition.release()
             try:
                 self._pollLoop()
-            except:
+            except Exception:
                 self.log.exception("Exception in poll loop:")
 
     def _pollLoop(self):
@@ -392,13 +393,13 @@ class Client(object):
             try:
                 conn.sendPacket(p)
                 return
-            except:
+            except Exception:
                 self.log.exception("Exception while submitting job %s to %s" %
                                    (job, conn))
                 conn.pending_jobs.remove(job)
                 # If we can't send the packet, discard the connection and
                 # try again
-                self._lostConnection(conn_dict[fd])
+                self._lostConnection(conn)
 
     def handlePacket(self, packet):
         """Handle a packet received from a Gearman server.
@@ -512,7 +513,7 @@ class Client(object):
         job.denominator = packet.getArgument(1)
         try:
             job.percent_complete = float(job.numerator)/float(job.denominator)
-        except:
+        except Exception:
             job.percent_complete = None
 
     def handleStatusRes(self, packet):
@@ -530,8 +531,9 @@ class Client(object):
         job.denominator = packet.getArgument(4)
         try:
             job.percent_complete = float(job.numerator)/float(job.denominator)
-        except:
+        except Exception:
             job.percent_complete = None
+
 
 class Job(object):
     log = logging.getLogger("gear.Job")

@@ -14,9 +14,6 @@
 # limitations under the License.
 
 import testscenarios
-import testtools
-from testtools import content
-from testtools import matchers
 
 import gear
 from gear import tests
