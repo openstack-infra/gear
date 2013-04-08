@@ -12,6 +12,30 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
+"""
+Protocol Constants
+==================
+
+These are not necessary for normal API usage.  See the `Gearman
+protocol reference <http://gearman.org/protocol>`_ for an explanation
+of each of these.
+
+Magic Codes
+-----------
+
+.. py:data:: REQ
+
+   The Gearman magic code for a request.
+
+.. py:data:: RES
+
+   The Gearman magic code for a response.
+
+Packet Types
+------------
+
+"""
+
 types = {
     1: 'CAN_DO',
     2: 'CANT_DO',
@@ -53,6 +77,7 @@ types = {
 
 for i, name in types.items():
     globals()[name] = i
+    __doc__ += '\n.. py:data:: %s\n' % name
 
 REQ = '\x00REQ'
 RES = '\x00RES'
