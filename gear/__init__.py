@@ -675,7 +675,7 @@ class Client(object):
 
         job = packet.getJob()
         job.numerator = packet.getArgument(1)
-        job.denominator = packet.getArgument(1)
+        job.denominator = packet.getArgument(2)
         try:
             job.fraction_complete = float(job.numerator)/float(job.denominator)
         except Exception:
