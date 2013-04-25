@@ -582,7 +582,9 @@ class Client(object):
         """
 
         job = packet.getJob()
-        job.data += packet.getArgument(1)
+        data = packet.getArgument(1)
+        if data:
+            job.data.append(data)
         job.complete = True
         job.failure = False
         del packet.connection.related_jobs[job.handle]
@@ -641,7 +643,9 @@ class Client(object):
         """
 
         job = packet.getJob()
-        job.data += packet.getArgument(1)
+        data = packet.getArgument(1)
+        if data:
+            job.data.append(data)
         self.log.debug("Job data; handle: %s data: %s" %
                        (job.handle, job.data))
         return job
@@ -657,7 +661,9 @@ class Client(object):
         """
 
         job = packet.getJob()
-        job.data += packet.getArgument(1)
+        data = packet.getArgument(1)
+        if data:
+            job.data.append(data)
         job.warning = True
         self.log.debug("Job warning; handle: %s data: %s" %
                        (job.handle, job.data))
@@ -725,9 +731,10 @@ class Job(object):
         The unique ID of the job (if supplied).
     **handle** (str or None)
         The Gearman job handle.  None if no job handle has been received yet.
-    **data** (str)
-        The result data returned from Gearman.  The empty string until
-        data have been received.
+    **data** (list of byte-arrays)
+        The result data returned from Gearman.  Each packet appends an
+        element to the list.  Depending on the nature of the data, the
+        elements may need to be concatenated before use.
     **exception** (str or None)
         Exception information returned from Gearman.  None if no exception
         has been received.
@@ -761,7 +768,7 @@ class Job(object):
         self.arguments = arguments
         self.unique = unique
         self.handle = None
-        self.data = b''
+        self.data = []
         self.exception = None
         self.warning = False
         self.complete = False
