@@ -63,6 +63,7 @@ Class Reference
 
 import logging
 import os
+import re
 import select
 import socket
 import struct
@@ -112,6 +113,7 @@ class Connection(object):
         self.connected = False
         self.pending_jobs = []
         self.related_jobs = {}
+        self.admin_requests = []
 
     def __repr__(self):
         return '<gear.Connection 0x%x host: %s port: %s>' % (
@@ -171,25 +173,140 @@ class Connection(object):
         self.conn.send(packet.toBinary())
 
     def readPacket(self):
-        """Read one packet from the server.
+        """Read one packet or administrative response from the server.
 
-        Blocks until the complete packet is read.
-        :returns: The :py:class:`Packet` read.
-        :rtype: :py:class:`Packet`
+        Blocks until the complete packet or response is read.
+        :returns: The :py:class:`Packet` or :py:class:`AdminRequest' read.
+        :rtype: :py:class:`Packet` or :py:class:`AdminRequest`
         """
         packet = b''
         datalen = 0
         code = None
         ptype = None
+        admin = None
+        admin_request = None
         while True:
             c = self.conn.recv(1)
             if not c:
                 return None
+            if admin is None:
+                if c == '\x00':
+                    admin = False
+                else:
+                    admin = True
+                    admin_request = self.admin_requests.pop(0)
             packet += c
-            if len(packet) == 12:
-                code, ptype, datalen = struct.unpack('!4sii', packet)
-            elif len(packet) == datalen+12:
-                return Packet(code, ptype, packet[12:], connection=self)
+            if admin:
+                if admin_request.isComplete(packet):
+                    return admin_request
+            else:
+                if len(packet) == 12:
+                    code, ptype, datalen = struct.unpack('!4sii', packet)
+                elif len(packet) == datalen+12:
+                    return Packet(code, ptype, packet[12:], connection=self)
+
+    def sendAdminRequest(self, request):
+        """Send an administrative request to the server.
+
+        :arg AdminRequest request: The :py:class:`AdminRequest` to send.
+        """
+        self.admin_requests.append(request)
+        self.conn.send(request.getCommand())
+
+
+class AdminRequest(object):
+    """Encapsulates a request (and response) sent over the
+    administrative protocol.  This is a base class that may not be
+    instantiated dircectly; a subclass implementing a specific command
+    must be used instead.
+
+    :arg list arguments: A list of string arguments for the command.
+
+    The following instance attributes are available:
+
+    **response** (str)
+        The response from the server.
+    **arguments** (str)
+        The argument supplied with the constructor.
+    **command** (str)
+        The administrative command.
+    **finished_re** (compiled regular expression)
+        The regular expression used to determine when the response is
+        complete.
+    """
+
+    log = logging.getLogger("gear.AdminRequest")
+
+    command = None
+    arguments = []
+    finished_re = None
+    response = None
+
+    def __init__(self, *arguments):
+        self.wait_event = threading.Event()
+        self.arguments = arguments
+        if type(self) == AdminRequest:
+            raise NotImplementedError("AdminRequest must be subclassed")
+
+    def __repr__(self):
+        return '<gear.AdminRequest 0x%x command: %s>' % (
+            id(self), self.command)
+
+    def getCommand(self):
+        cmd = self.command
+        if self.arguments:
+            cmd += ' ' + ' '.join(self.arguments)
+        cmd += '\n'
+        return cmd
+
+    def isComplete(self, data):
+        if self.finished_re.search(data):
+            self.response = data
+            return True
+        return False
+
+    def setComplete(self):
+        self.wait_event.set()
+
+    def waitForResponse(self):
+        self.wait_event.wait()
+
+
+class StatusAdminRequest(AdminRequest):
+    """A "status" administrative request."""
+
+    command = 'status'
+    finished_re = re.compile('^\.\r?\n', re.M)
+
+
+class ShowJobsAdminRequest(AdminRequest):
+    """A "show jobs" administrative request."""
+
+    command = 'show jobs'
+    finished_re = re.compile('^\.\r?\n', re.M)
+
+
+class ShowUniqueJobsAdminRequest(AdminRequest):
+    """A "show unique jobs" administrative request."""
+
+    command = 'show unique jobs'
+    finished_re = re.compile('^\.\r?\n', re.M)
+
+
+class CancelJobAdminRequest(AdminRequest):
+    """A "cancel job" administrative request.
+
+    :arg str handle: The job handle to be canceled.
+    """
+
+    command = 'cancel job'
+    finished_re = re.compile('^(OK|ERR .*)\r?\n', re.M)
+
+
+class VersionAdminRequest(AdminRequest):
+    """A "version" administrative request."""
+    command = 'version'
+    finished_re = re.compile('^(OK .*)\r?\n', re.M)
 
 
 class Packet(object):
@@ -461,7 +578,10 @@ class Client(object):
                     self.log.debug("Processing input on %s" % conn)
                     p = conn_dict[fd].readPacket()
                     if p:
-                        self.handlePacket(p)
+                        if isinstance(p, Packet):
+                            self.handlePacket(p)
+                        else:
+                            self.handleAdminResponse(p)
                     else:
                         self.log.debug("Received no data on %s" % conn)
                         self._lostConnection(conn_dict[fd])
@@ -517,6 +637,7 @@ class Client(object):
             conn.pending_jobs.append(job)
             try:
                 conn.sendPacket(p)
+                job.connection = conn
                 return
             except Exception:
                 self.log.exception("Exception while submitting job %s to %s" %
@@ -525,6 +646,21 @@ class Client(object):
                 # If we can't send the packet, discard the connection and
                 # try again
                 self._lostConnection(conn)
+
+    def handleAdminResponse(self, request):
+        """Handle an administrative command response from Gearman.
+
+        This method is called whenever a response to a previously
+        issued administrative command is received from one of this
+        client's connections.  It normally releases the wait lock on
+        the initiating AdminRequest object.
+
+        :arg AdminRequest request: The :py:class:`AdminRequest` that
+            initiated the received response.
+        """
+
+        self.log.debug("Received admin response %s" % request)
+        request.setComplete()
 
     def handlePacket(self, packet):
         """Handle a packet received from a Gearman server.
@@ -759,6 +895,9 @@ class Job(object):
     **running** (bool or None)
         Whether the job is running.  Only set by handleStatusRes() in
         response to a getStatus() query.
+    **connection** (:py:class:`Connection` or None)
+        The connection associated with the job.  Only set after the job
+        has been submitted to a Gearman server.
     """
 
     log = logging.getLogger("gear.Job")
@@ -778,6 +917,7 @@ class Job(object):
         self.fraction_complete = None
         self.known = None
         self.running = None
+        self.connection = None
 
     def __repr__(self):
         return '<gear.Job 0x%x handle: %s name: %s unique: %s>' % (
