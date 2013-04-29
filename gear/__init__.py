@@ -702,6 +702,7 @@ class Client(object):
         job = packet.connection.pending_jobs.pop(0)
         job.handle = packet.data
         packet.connection.related_jobs[job.handle] = job
+        job._setHandleReceived()
         self.log.debug("Job created; handle: %s" % job.handle)
         return job
 
@@ -903,6 +904,7 @@ class Job(object):
     log = logging.getLogger("gear.Job")
 
     def __init__(self, name, arguments, unique=None):
+        self._wait_event = threading.Event()
         self.name = name
         self.arguments = arguments
         self.unique = unique
@@ -922,3 +924,15 @@ class Job(object):
     def __repr__(self):
         return '<gear.Job 0x%x handle: %s name: %s unique: %s>' % (
             id(self), self.handle, self.name, self.unique)
+
+    def _setHandleReceived(self):
+        self._wait_event.set()
+
+    def waitForHandle(self, timeout=None):
+        """Wait until the Job handle has been recieved from Gearman.
+
+        :arg int timeout: If not None, return after this many seconds if no
+            handle has been received (default: None).
+        """
+
+        self._wait_event.wait(timeout)
