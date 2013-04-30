@@ -8,6 +8,7 @@ Gear: Asynchronous Event-Driven Gearman Interface
 
 .. automodule:: gear
   :members:
+  :inherited-members:
 
 .. automodule:: gear.constants
   :members:
