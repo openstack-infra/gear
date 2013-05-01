@@ -1,17 +1,192 @@
-.. Gear documentation master file, created by
-   sphinx-quickstart on Mon Apr  8 15:28:36 2013.
-   You can adapt this file completely to your liking, but it should at least
-   contain the root `toctree` directive.
-
 Gear: Asynchronous Event-Driven Gearman Interface
 =================================================
+.. module:: gear
+   :synopsis: Asynchronous Event-Driven Gearman Interface
 
-.. automodule:: gear
+This module implements an asynchronous event-driven interface to
+Gearman.  It provides interfaces to build a client or worker, and
+access to the administrative protocol.  The design approach is to keep
+it simple, with a relatively thin abstration of the Gearman protocol
+itself.  It should be easy to use to build a client or worker that
+operates either synchronously or asynchronously.
+
+
+Client Example
+--------------
+
+To use the client interface, instantiate a
+:py:class:`Client`, and submit a :py:class:`Job`.  For example::
+
+    import gear
+    client = gear.Client()
+    client.addServer('gearman.example.com')
+    client.waitForServer()  # Wait for at least one server to be connected
+
+    job = gear.Job("reverse", "test string")
+    client.submitJob(job)
+
+The waitForServer() call is only necessary when running in a
+synchronous context.  When running asynchronously, it is probably more
+desirable to omit that call and instead handle the
+:py:class:`NoConnectedServersError` exception that submitJob may
+raise if no servers are connected at the time.
+
+When Gearman returns data to the client, the :py:class:`Job` object is
+updated immediately.  Event handlers are called on the
+:py:class:`Client` object so that subclasses have ample facilities for
+reacting to events synchronously.
+
+Worker Example
+--------------
+
+To use the worker interface, create a :py:class:`Worker`, register at
+least one function that the worker supports, and then wait for a Job
+to be dispatched to the worker.
+
+An example of a Gearman worker::
+
+    import gear
+    worker = gear.Worker('reverser')
+    worker.addServer('gearman.example.com')
+    worker.registerFunction("reverse")
+
+    while True:
+        job = worker.getJob()
+        job.sendWorkComplete(job.arguments.reverse())
+
+API Reference
+=============
+
+The following sections document the module's public API.  It is
+divided into sections focusing on implementing a client, a worker,
+using the administrative protocol, and then the classes that are
+common to all usages of the module.
+
+Client Usage
+------------
+
+The classes in this section should be all that are needed in order to
+implement a Gearman client.
+
+Client Objects
+^^^^^^^^^^^^^^
+.. autoclass:: gear.Client
   :members:
   :inherited-members:
 
+Job Objects
+^^^^^^^^^^^
+.. autoclass:: gear.Job
+  :members:
+  :inherited-members:
+
+
+Worker Usage
+------------
+
+The classes in this section should be all that are needed in order to
+implement a Gearman worker.
+
+Worker Objects
+^^^^^^^^^^^^^^
+.. autoclass:: gear.Worker
+  :members:
+  :inherited-members:
+
+FunctionRecord Objects
+^^^^^^^^^^^^^^^^^^^^^^
+.. autoclass:: gear.FunctionRecord
+  :members:
+  :inherited-members:
+
+WorkerJob Objects
+^^^^^^^^^^^^^^^^^
+.. autoclass:: gear.WorkerJob
+  :members:
+  :inherited-members:
+
+Administrative Protocol
+-----------------------
+
+Gearman provides an administrative protocol that is multiplexed on the
+same connection as the normal binary protocol for jobs.  The classes
+in this section are useful for working with that protocol.  They need
+to be used with an existing :py:class:`Connection` object; either one
+obtained via a :py:class:`Client` or :py:class:`Worker`, or via direct
+instantiation of :py:class:`Connection` to a Gearman server.
+
+AdminRequest Objects
+^^^^^^^^^^^^^^^^^^^^
+.. autoclass:: gear.AdminRequest
+  :members:
+  :inherited-members:
+
+.. autoclass:: gear.StatusAdminRequest
+  :inherited-members:
+
+.. autoclass:: gear.ShowJobsAdminRequest
+  :inherited-members:
+
+.. autoclass:: gear.ShowUniqueJobsAdminRequest
+  :inherited-members:
+
+.. autoclass:: gear.CancelJobAdminRequest
+  :inherited-members:
+
+.. autoclass:: gear.VersionAdminRequest
+  :inherited-members:
+
+
+Common
+------
+
+These classes do not normally need to be directly instatiated to use
+the gear API, but they may be returned or otherwise be accessible from
+other classes in this module.  They generally operate at a lower
+level, but still form part of the public API.
+
+Connection Objects
+^^^^^^^^^^^^^^^^^^
+.. autoclass:: gear.Connection
+  :members:
+  :inherited-members:
+
+Packet Objects
+^^^^^^^^^^^^^^
+.. autoclass:: gear.Packet
+  :members:
+  :inherited-members:
+
+Exceptions
+^^^^^^^^^^
+.. autoexception:: gear.ConnectionError
+.. autoexception:: gear.InvalidDataError
+.. autoexception:: gear.ConfigurationError
+.. autoexception:: gear.NoConnectedServersError
+.. autoexception:: gear.UnknownJobError
+.. autoexception:: gear.InterruptedError
+
+
+Constants
+---------
+
+These constants are used by public API classes.
+
+.. py:data:: PRECEDENCE_NORMAL
+
+   Normal job precedence.
+
+.. py:data:: PRECEDENCE_LOW
+
+   Low job precedence.
+
+.. py:data:: PRECEDENCE_HIGH
+
+   High job precedence.
+
 .. automodule:: gear.constants
   :members:
+
 
 Indices and tables
 ==================

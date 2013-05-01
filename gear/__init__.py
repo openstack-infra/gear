@@ -12,64 +12,6 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
-"""
-This module implements an asynchronous event-driven interface to
-Gearman.  To use the client interface, instantiate a
-:py:class:`Client`, and submit a :py:class:`Job`.  For example::
-
-    import gear
-    client = gear.Client()
-    client.addServer('gearman.example.com')
-    client.waitForServer()  # Wait for at least one server to be connected
-
-    job = gear.Job("reverse", "test string")
-    client.submitJob(job)
-
-The waitForServer() call is only necessary when running in a
-synchronous context.  When running asynchronously, it is probably more
-desirable to omit that call and instead handle the
-:py:class:`NoConnectedServersError` exception that submitJob may
-raise if no servers are connected at the time.
-
-When Gearman returns data to the client, the :py:class:`Job` object is
-updated immediately.  Event handlers are called on the
-:py:class:`Client` object so that subclasses have ample facilities for
-reacting to events synchronously.
-
-An example of a Gearman worker::
-
-    import gear
-    worker = gear.Worker('test-worker')
-    worker.addServer('gearman.example.com')
-    worker.registerFunction("test")
-    job = worker.getJob()
-    job.sendWorkComplete()
-
-
-API Reference
-=============
-
-Constants
----------
-These constants are used by public API classes.
-
-.. py:data:: PRECEDENCE_NORMAL
-
-   Normal job precedence.
-
-.. py:data:: PRECEDENCE_LOW
-
-   Low job precedence.
-
-.. py:data:: PRECEDENCE_HIGH
-
-   High job precedence.
-
-Class Reference
----------------
-
-"""
-
 import logging
 import os
 import Queue
@@ -294,44 +236,75 @@ class AdminRequest(object):
         self.wait_event.set()
 
     def waitForResponse(self):
+        """Blocks until the complete response has been received from
+        Gearman.
+        """
         self.wait_event.wait()
 
 
 class StatusAdminRequest(AdminRequest):
-    """A "status" administrative request."""
+    """A "status" administrative request.
 
+    The response from gearman may be found in the **response** attribute.
+    """
     command = 'status'
     finished_re = re.compile('^\.\r?\n', re.M)
 
+    def __init__(self):
+        super(StatusAdminRequest, self).__init__()
+
 
 class ShowJobsAdminRequest(AdminRequest):
-    """A "show jobs" administrative request."""
+    """A "show jobs" administrative request.
 
+    The response from gearman may be found in the **response** attribute.
+    """
     command = 'show jobs'
     finished_re = re.compile('^\.\r?\n', re.M)
 
+    def __init__(self):
+        super(ShowJobsAdminRequest, self).__init__()
+
 
 class ShowUniqueJobsAdminRequest(AdminRequest):
-    """A "show unique jobs" administrative request."""
+    """A "show unique jobs" administrative request.
+
+    The response from gearman may be found in the **response** attribute.
+    """
 
     command = 'show unique jobs'
     finished_re = re.compile('^\.\r?\n', re.M)
+
+    def __init__(self):
+        super(ShowUniqueJobsAdminRequest, self).__init__()
 
 
 class CancelJobAdminRequest(AdminRequest):
     """A "cancel job" administrative request.
 
     :arg str handle: The job handle to be canceled.
+
+    The response from gearman may be found in the **response** attribute.
     """
 
     command = 'cancel job'
     finished_re = re.compile('^(OK|ERR .*)\r?\n', re.M)
 
+    def __init__(self, handle):
+        super(CancelJobAdminRequest, self).__init__(handle)
+
 
 class VersionAdminRequest(AdminRequest):
-    """A "version" administrative request."""
+    """A "version" administrative request.
+
+    The response from gearman may be found in the **response** attribute.
+    """
+
     command = 'version'
     finished_re = re.compile('^(OK .*)\r?\n', re.M)
+
+    def __init__(self):
+        super(VersionAdminRequest, self).__init__()
 
 
 class Packet(object):
@@ -1338,7 +1311,7 @@ class WorkerJob(BaseJob):
 
     :arg str handle: The job handle assigned by gearman.
     :arg str name: The name of the job.
-    :arg str arguments: The opaque data blob to be passed to the worker
+    :arg str arguments: The opaque data blob passed to the worker
         as arguments.
     :arg str unique: A string to uniquely identify the job to Gearman
         (optional).
