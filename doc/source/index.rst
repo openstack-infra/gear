@@ -10,6 +10,9 @@ it simple, with a relatively thin abstration of the Gearman protocol
 itself.  It should be easy to use to build a client or worker that
 operates either synchronously or asynchronously.
 
+The module also provides a simple Gearman server for use as a
+convenience in unit tests.  The server is not designed for production
+use under load.
 
 Client Example
 --------------
@@ -134,6 +137,20 @@ AdminRequest Objects
   :inherited-members:
 
 .. autoclass:: gear.VersionAdminRequest
+  :inherited-members:
+
+
+Server Usage
+------------
+
+A simple Gearman server is provided for convenience in unit testing,
+but is not designed for production use at scale.  It takes no
+parameters other than the port number on which to listen.
+
+Server Objects
+^^^^^^^^^^^^^^
+.. autoclass:: gear.Server
+  :members:
   :inherited-members:
 
 
