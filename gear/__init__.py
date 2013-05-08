@@ -67,6 +67,7 @@ class Connection(object):
     def _init(self):
         self.conn = None
         self.connected = False
+        self.connect_time = None
         self.pending_jobs = []
         self.related_jobs = {}
         self.admin_requests = []
@@ -115,6 +116,7 @@ class Connection(object):
         self.log.debug("Connected to %s port %s" % (self.host, self.port))
         self.conn = s
         self.connected = True
+        self.connect_time = time.time()
 
     def disconnect(self):
         """Disconnect from the server and remove all associated state
@@ -1525,6 +1527,7 @@ class Server(BaseClientServer):
         self.port = port
         self.queue = []
         self.jobs = {}
+        self.functions = set()
         self.connect_wake_read, self.connect_wake_write = os.pipe()
 
         for res in socket.getaddrinfo(None, self.port, socket.AF_UNSPEC,
@@ -1610,6 +1613,8 @@ class Server(BaseClientServer):
     def handleAdminRequest(self, request):
         if request.command.startswith('cancel job'):
             self.handleCancelJob(request)
+        elif request.command.startswith('status'):
+            self.handleStatus(request)
 
     def handleCancelJob(self, request):
         words = request.command.split()
@@ -1623,6 +1628,26 @@ class Server(BaseClientServer):
                     request.connection.conn.send("OK\n")
                     return
         request.connection.conn.send("ERR UNKNOWN_JOB\n")
+
+    def handleStatus(self, request):
+        functions = {}
+        for function in self.functions:
+            # Total, running, workers
+            functions[function] = [0, 0, 0]
+
+        for job in self.queue:
+            functions[job.name][0] += 1
+        for job in self.jobs.values():
+            functions[job.name][0] += 1
+            functions[job.name][1] += 1
+        for connection in self.active_connections:
+            for function in connection.functions:
+                functions[function][2] += 1
+        for name, values in functions.items():
+            request.connection.conn.send("%s\t%s\t%s\t%s\n" %
+                                         (name, values[0], values[1],
+                                          values[2]))
+        request.connection.conn.send(".\n")
 
     def wakeConnections(self):
         p = Packet(constants.REQ, constants.NOOP, '')
@@ -1716,6 +1741,7 @@ class Server(BaseClientServer):
         name = packet.getArgument(0)
         self.log.debug("Adding function %s to %s" % (name, packet.connection))
         packet.connection.functions.add(name)
+        self.functions.add(name)
 
     def handleCantDo(self, packet):
         name = packet.getArgument(0)
