@@ -603,8 +603,11 @@ class BaseClientServer(object):
 
         The object may no longer be used after shutdown is called.
         """
+        self.log.debug("Beginning shutdown")
         self._shutdown()
+        self.log.debug("Beginning cleanup")
         self._cleanup()
+        self.log.debug("Finished shutdown")
 
     def _shutdown(self):
         # The first part of the shutdown process where all threads
@@ -1084,7 +1087,7 @@ class Worker(BaseClient):
         p = Packet(constants.REQ, constants.CANT_DO, name)
         self.broadcast(p)
 
-    def _sendResetAbilities(self, name):
+    def _sendResetAbilities(self):
         p = Packet(constants.REQ, constants.RESET_ABILITIES, '')
         self.broadcast(p)
 
@@ -1547,6 +1550,9 @@ class Server(BaseClientServer):
         if self.socket is None:
             raise Exception("Could not open socket")
 
+        if port == 0:
+            self.port = self.socket.getsockname()[1]
+
         super(Server, self).__init__()
 
     def _doConnectLoop(self):
@@ -1623,6 +1629,7 @@ class Server(BaseClientServer):
         for connection in self.active_connections:
             if connection.state == 'SLEEP':
                 connection.sendPacket(p)
+                connection.changeState("AWAKE")
 
     def handleSubmitJob(self, packet):
         name = packet.getArgument(0)
@@ -1641,45 +1648,56 @@ class Server(BaseClientServer):
         self.queue.append(job)
         self.wakeConnections()
 
+    def getJobForConnection(self, connection, peek=False):
+        for job in self.queue:
+            if job.name in connection.functions:
+                if not peek:
+                    self.queue.remove(job)
+                return job
+        return None
+
     def handleGrabJobUniq(self, packet):
-        job = None
-        for j in self.queue:
-            if j.name in packet.connection.functions:
-                job = j
-                self.queue.remove(j)
-                break
+        job = self.getJobForConnection(packet.connection)
         if job:
-            unique = job.unique
-            if not unique:
-                unique = ''
-            data = '%s\x00%s\x00%s\x00%s' % (job.handle, job.name,
-                                             unique, job.arguments)
-            p = Packet(constants.REQ, constants.JOB_ASSIGN_UNIQ, data)
-            packet.connection.sendPacket(p)
+            self.sendJobAssignUniq(packet.connection, job)
         else:
-            p = Packet(constants.REQ, constants.NO_JOB, "")
-            packet.connection.sendPacket(p)
+            self.sendNoJob(packet.connection)
+
+    def sendJobAssignUniq(self, connection, job):
+        unique = job.unique
+        if not unique:
+            unique = ''
+        data = '%s\x00%s\x00%s\x00%s' % (job.handle, job.name,
+                                         unique, job.arguments)
+        p = Packet(constants.REQ, constants.JOB_ASSIGN_UNIQ, data)
+        connection.sendPacket(p)
+
+    def sendNoJob(self, connection):
+        p = Packet(constants.REQ, constants.NO_JOB, "")
+        connection.sendPacket(p)
 
     def handlePreSleep(self, packet):
         packet.connection.changeState("SLEEP")
+        if self.getJobForConnection(packet.connection, peek=True):
+            self.wakeConnections()
 
     def handleWorkComplete(self, packet):
-        self.handlePassthrough(self, packet, True)
+        self.handlePassthrough(packet, True)
 
     def handleWorkFail(self, packet):
-        self.handlePassthrough(self, packet, True)
+        self.handlePassthrough(packet, True)
 
     def handleWorkException(self, packet):
-        self.handlePassthrough(self, packet, True)
+        self.handlePassthrough(packet, True)
 
     def handleWorkData(self, packet):
-        self.handlePassthrough(self, packet)
+        self.handlePassthrough(packet)
 
     def handleWorkWarning(self, packet):
-        self.handlePassthrough(self, packet)
+        self.handlePassthrough(packet)
 
     def handleWorkStatus(self, packet):
-        self.handlePassthrough(self, packet)
+        self.handlePassthrough(packet)
 
     def handlePassthrough(self, packet, finished=False):
         handle = packet.getArgument(0)
