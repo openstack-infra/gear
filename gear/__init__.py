@@ -21,6 +21,7 @@ import socket
 import struct
 import threading
 import time
+import uuid as uuid_module
 
 from gear import constants
 
@@ -53,6 +54,10 @@ class InterruptedError(Exception):
     pass
 
 
+class TimeoutError(Exception):
+    pass
+
+
 class Connection(object):
     """A Connection to a Gearman Server."""
 
@@ -62,6 +67,7 @@ class Connection(object):
         self.host = host
         self.port = port
 
+        self.echo_lock = threading.Lock()
         self._init()
 
     def _init(self):
@@ -71,6 +77,8 @@ class Connection(object):
         self.pending_jobs = []
         self.related_jobs = {}
         self.admin_requests = []
+        self.echo_conditions = {}
+        self.options = set()
         self.changeState("INIT")
 
     def changeState(self, state):
@@ -191,6 +199,63 @@ class Connection(object):
         """
         self.admin_requests.append(request)
         self.conn.send(request.getCommand())
+
+    def echo(self, data=None, timeout=None):
+        """Perform an echo test on the server.
+
+        This method waits until the echo response has been received or the
+        timeout has been reached.
+
+        :arg str data: The data to request be echoed.  If None, a random
+            unique string will be generated.
+        :arg numeric timeout: Number of seconds to wait until the response
+            is received.  If None, wait forever.
+        :raises TimeoutError: If the timeout is reached before the response
+            is received.
+        """
+        if data is None:
+            data = str(uuid_module.uuid4().hex)
+        self.echo_lock.acquire()
+        try:
+            if data in self.echo_conditions:
+                raise InvalidDataError("This client is already waiting on an "
+                                       "echo response of: %s" % data)
+            condition = threading.Condition()
+            self.echo_conditions[data] = condition
+        finally:
+            self.echo_lock.release()
+
+        self.sendEchoReq(data)
+
+        condition.acquire()
+        condition.wait(timeout)
+        condition.release()
+
+        if data in self.echo_conditions:
+            return data
+        raise TimeoutError()
+
+    def sendEchoReq(self, data):
+        p = Packet(constants.REQ, constants.ECHO_REQ, data)
+        self.sendPacket(p)
+
+    def handleEchoRes(self, data):
+        condition = None
+        self.echo_lock.acquire()
+        try:
+            condition = self.echo_conditions.get(data)
+            if condition:
+                del self.echo_conditions[data]
+        finally:
+            self.echo_lock.release()
+
+        if not condition:
+            return False
+        condition.notifyAll()
+        return True
+
+    def handleOptionRes(self, option):
+        self.options.add(option)
 
 
 class AdminRequest(object):
@@ -567,28 +632,170 @@ class BaseClientServer(object):
             self.handleWorkStatus(packet)
         elif packet.ptype == constants.STATUS_RES:
             self.handleStatusRes(packet)
+        elif packet.ptype == constants.GET_STATUS:
+            self.handleGetStatus(packet)
         elif packet.ptype == constants.JOB_ASSIGN_UNIQ:
             self.handleJobAssignUnique(packet)
+        elif packet.ptype == constants.JOB_ASSIGN:
+            self.handleJobAssign(packet)
         elif packet.ptype == constants.NO_JOB:
             self.handleNoJob(packet)
         elif packet.ptype == constants.NOOP:
             self.handleNoop(packet)
         elif packet.ptype == constants.SUBMIT_JOB:
             self.handleSubmitJob(packet)
+        elif packet.ptype == constants.SUBMIT_JOB_BG:
+            self.handleSubmitJobBg(packet)
+        elif packet.ptype == constants.SUBMIT_JOB_HIGH:
+            self.handleSubmitJobHigh(packet)
+        elif packet.ptype == constants.SUBMIT_JOB_HIGH_BG:
+            self.handleSubmitJobHighBg(packet)
+        elif packet.ptype == constants.SUBMIT_JOB_LOW:
+            self.handleSubmitJobLow(packet)
+        elif packet.ptype == constants.SUBMIT_JOB_LOW_BG:
+            self.handleSubmitJobLowBg(packet)
+        elif packet.ptype == constants.SUBMIT_JOB_SCHED:
+            self.handleSubmitJobSched(packet)
+        elif packet.ptype == constants.SUBMIT_JOB_EPOCH:
+            self.handleSubmitJobEpoch(packet)
         elif packet.ptype == constants.GRAB_JOB_UNIQ:
             self.handleGrabJobUniq(packet)
+        elif packet.ptype == constants.GRAB_JOB:
+            self.handleGrabJob(packet)
         elif packet.ptype == constants.PRE_SLEEP:
             self.handlePreSleep(packet)
         elif packet.ptype == constants.SET_CLIENT_ID:
             self.handleSetClientID(packet)
         elif packet.ptype == constants.CAN_DO:
             self.handleCanDo(packet)
+        elif packet.ptype == constants.CAN_DO_TIMEOUT:
+            self.handleCanDoTimeout(packet)
         elif packet.ptype == constants.CANT_DO:
             self.handleCantDo(packet)
         elif packet.ptype == constants.RESET_ABILITIES:
             self.handleResetAbilities(packet)
+        elif packet.ptype == constants.ECHO_REQ:
+            self.handleEchoReq(packet)
+        elif packet.ptype == constants.ECHO_RES:
+            self.handleEchoRes(packet)
+        elif packet.ptype == constants.ERROR:
+            self.handleError(packet)
+        elif packet.ptype == constants.ALL_YOURS:
+            self.handleAllYours(packet)
+        elif packet.ptype == constants.OPTION_REQ:
+            self.handleOptionReq(packet)
+        elif packet.ptype == constants.OPTION_RES:
+            self.handleOptionRes(packet)
         else:
-            self.log.error("Received unknown packet" % packet)
+            self.log.error("Received unknown packet: %s" % packet)
+
+    def _defaultPacketHandler(self, packet):
+        self.log.error("Received unhandled packet: %s" % packet)
+
+    def handleJobCreated(self, packet):
+        return self._defaultPacketHandler(packet)
+
+    def handleWorkComplete(self, packet):
+        return self._defaultPacketHandler(packet)
+
+    def handleWorkFail(self, packet):
+        return self._defaultPacketHandler(packet)
+
+    def handleWorkException(self, packet):
+        return self._defaultPacketHandler(packet)
+
+    def handleWorkData(self, packet):
+        return self._defaultPacketHandler(packet)
+
+    def handleWorkWarning(self, packet):
+        return self._defaultPacketHandler(packet)
+
+    def handleWorkStatus(self, packet):
+        return self._defaultPacketHandler(packet)
+
+    def handleStatusRes(self, packet):
+        return self._defaultPacketHandler(packet)
+
+    def handleGetStatus(self, packet):
+        return self._defaultPacketHandler(packet)
+
+    def handleJobAssignUnique(self, packet):
+        return self._defaultPacketHandler(packet)
+
+    def handleJobAssign(self, packet):
+        return self._defaultPacketHandler(packet)
+
+    def handleNoJob(self, packet):
+        return self._defaultPacketHandler(packet)
+
+    def handleNoop(self, packet):
+        return self._defaultPacketHandler(packet)
+
+    def handleSubmitJob(self, packet):
+        return self._defaultPacketHandler(packet)
+
+    def handleSubmitJobBg(self, packet):
+        return self._defaultPacketHandler(packet)
+
+    def handleSubmitJobHigh(self, packet):
+        return self._defaultPacketHandler(packet)
+
+    def handleSubmitJobHighBg(self, packet):
+        return self._defaultPacketHandler(packet)
+
+    def handleSubmitJobLow(self, packet):
+        return self._defaultPacketHandler(packet)
+
+    def handleSubmitJobLowBg(self, packet):
+        return self._defaultPacketHandler(packet)
+
+    def handleSubmitJobSched(self, packet):
+        return self._defaultPacketHandler(packet)
+
+    def handleSubmitJobEpoch(self, packet):
+        return self._defaultPacketHandler(packet)
+
+    def handleGrabJobUniq(self, packet):
+        return self._defaultPacketHandler(packet)
+
+    def handleGrabJob(self, packet):
+        return self._defaultPacketHandler(packet)
+
+    def handlePreSleep(self, packet):
+        return self._defaultPacketHandler(packet)
+
+    def handleSetClientID(self, packet):
+        return self._defaultPacketHandler(packet)
+
+    def handleCanDo(self, packet):
+        return self._defaultPacketHandler(packet)
+
+    def handleCanDoTimeout(self, packet):
+        return self._defaultPacketHandler(packet)
+
+    def handleCantDo(self, packet):
+        return self._defaultPacketHandler(packet)
+
+    def handleResetAbilities(self, packet):
+        return self._defaultPacketHandler(packet)
+
+    def handleEchoReq(self, packet):
+        return self._defaultPacketHandler(packet)
+
+    def handleEchoRes(self, packet):
+        return self._defaultPacketHandler(packet)
+
+    def handleError(self, packet):
+        return self._defaultPacketHandler(packet)
+
+    def handleAllYours(self, packet):
+        return self._defaultPacketHandler(packet)
+
+    def handleOptionReq(self, packet):
+        return self._defaultPacketHandler(packet)
+
+    def handleOptionRes(self, packet):
+        return self._defaultPacketHandler(packet)
 
     def handleAdminRequest(self, request):
         """Handle an administrative command response from Gearman.
@@ -637,6 +844,14 @@ class BaseClientServer(object):
 
 
 class BaseClient(BaseClientServer):
+    def __init__(self):
+        super(BaseClient, self).__init__()
+        # A lock to use when sending packets that set the state across
+        # all known connections.  Note that it doesn't necessarily need
+        # to be used for all broadcasts, only those that affect multi-
+        # connection state, such as setting options or functions.
+        self.broadcast_lock = threading.RLock()
+
     def addServer(self, host, port=4730):
         """Add a server to the client's connection pool.
 
@@ -749,6 +964,29 @@ class BaseClient(BaseClientServer):
             self._lostConnection(connection)
             raise
 
+    def handleEchoRes(self, packet):
+        """Handle an ECHO_RES packet.
+
+        Causes the blocking :py:meth:`Connection.echo` invocation to
+        return.
+
+        :arg Packet packet: The :py:class:`Packet` that was received.
+        :returns: None
+        """
+        packet.connection.handleEchoRes(packet.getArgument(0))
+
+    def handleError(self, packet):
+        """Handle an ERROR packet.
+
+        Logs the error.
+
+        :arg Packet packet: The :py:class:`Packet` that was received.
+        :returns: None
+        """
+        self.log.error("Received ERROR packet: %s: %s" %
+                       (packet.getArgument(0),
+                        packet.getArgument(1)))
+
 
 class Client(BaseClient):
     """A Gearman client.
@@ -761,8 +999,36 @@ class Client(BaseClient):
 
     log = logging.getLogger("gear.Client")
 
+    def __init__(self):
+        super(Client, self).__init__()
+        self.options = set()
+
     def __repr__(self):
         return '<gear.Client 0x%x>' % id(self)
+
+    def _onConnect(self, conn):
+        # Called immediately after a successful (re-)connection
+        self.broadcast_lock.acquire()
+        try:
+            super(Client, self)._onConnect(conn)
+            for name in self.options:
+                p = Packet(constants.REQ, constants.OPTION_REQ, name)
+                conn.sendPacket(p)
+        finally:
+            self.broadcast_lock.release()
+
+    def setOption(self, name):
+        """Set an option for all connections.
+
+        :arg str name: The option name to set.
+        """
+        self.broadcast_lock.acquire()
+        try:
+            self.options.add(name)
+            p = Packet(constants.REQ, constants.OPTION_REQ, name)
+            self.broadcast(p)
+        finally:
+            self.broadcast_lock.release()
 
     def submitJob(self, job, background=False, precedence=PRECEDENCE_NORMAL):
         """Submit a job to a Gearman server.
@@ -981,6 +1247,16 @@ class Client(BaseClient):
             job.fraction_complete = None
         return job
 
+    def handleOptionRes(self, packet):
+        """Handle an OPTION_RES packet.
+
+        Updates the set of options for the connection.
+
+        :arg Packet packet: The :py:class:`Packet` that was received.
+        :returns: None.
+        """
+        packet.connection.handleOptionRes(packet.getArgument(0))
+
     def handleDisconnect(self, job):
         """Handle a Gearman server disconnection.
 
@@ -1082,21 +1358,37 @@ class Worker(BaseClient):
                 self._sendCanDo(f.name)
 
     def _sendCanDo(self, name):
-        p = Packet(constants.REQ, constants.CAN_DO, name)
-        self.broadcast(p)
+        self.broadcast_lock.acquire()
+        try:
+            p = Packet(constants.REQ, constants.CAN_DO, name)
+            self.broadcast(p)
+        finally:
+            self.broadcast_lock.release()
 
     def _sendCanDoTimeout(self, name, timeout):
-        data = name + '\x00' + timeout
-        p = Packet(constants.REQ, constants.CAN_DO_TIMEOUT, data)
-        self.broadcast(p)
+        self.broadcast_lock.acquire()
+        try:
+            data = name + '\x00' + timeout
+            p = Packet(constants.REQ, constants.CAN_DO_TIMEOUT, data)
+            self.broadcast(p)
+        finally:
+            self.broadcast_lock.release()
 
     def _sendCantDo(self, name):
-        p = Packet(constants.REQ, constants.CANT_DO, name)
-        self.broadcast(p)
+        self.broadcast_lock.acquire()
+        try:
+            p = Packet(constants.REQ, constants.CANT_DO, name)
+            self.broadcast(p)
+        finally:
+            self.broadcast_lock.release()
 
     def _sendResetAbilities(self):
-        p = Packet(constants.REQ, constants.RESET_ABILITIES, '')
-        self.broadcast(p)
+        self.broadcast_lock.acquire()
+        try:
+            p = Packet(constants.REQ, constants.RESET_ABILITIES, '')
+            self.broadcast(p)
+        finally:
+            self.broadcast_lock.release()
 
     def _sendPreSleep(self, connection):
         p = Packet(constants.REQ, constants.PRE_SLEEP, '')
@@ -1110,17 +1402,22 @@ class Worker(BaseClient):
             self.broadcast(p)
 
     def _onConnect(self, conn):
-        # Called immediately after a successful (re-)connection
-        p = Packet(constants.REQ, constants.SET_CLIENT_ID, self.worker_id)
-        conn.sendPacket(p)
-        for f in self.functions.values():
-            if f.timeout:
-                data = f.name + '\x00' + f.timeout
-                p = Packet(constants.REQ, constants.CAN_DO_TIMEOUT, data)
-            else:
-                p = Packet(constants.REQ, constants.CAN_DO, f.name)
-        conn.sendPacket(p)
-        conn.changeState("IDLE")
+        self.broadcast_lock.acquire()
+        try:
+            # Called immediately after a successful (re-)connection
+            p = Packet(constants.REQ, constants.SET_CLIENT_ID, self.worker_id)
+            conn.sendPacket(p)
+            super(Worker, self)._onConnect(conn)
+            for f in self.functions.values():
+                if f.timeout:
+                    data = f.name + '\x00' + f.timeout
+                    p = Packet(constants.REQ, constants.CAN_DO_TIMEOUT, data)
+                else:
+                    p = Packet(constants.REQ, constants.CAN_DO, f.name)
+            conn.sendPacket(p)
+            conn.changeState("IDLE")
+        finally:
+            self.broadcast_lock.release()
         # Any exceptions will be handled by the calling function, and the
         # connection will not be put into the pool.
 
@@ -1253,10 +1550,25 @@ class Worker(BaseClient):
                 self._sendPreSleep(packet.connection)
                 packet.connection.changeState("SLEEP")
             else:
-                self.log.debug("Received unexpecetd NO_JOB packet on %s" %
+                self.log.debug("Received unexpected NO_JOB packet on %s" %
                                packet.connection)
         finally:
             self.job_lock.release()
+
+    def handleJobAssign(self, packet):
+        """Handle a JOB_ASSIGN packet.
+
+        Adds a WorkerJob to the internal queue to be picked up by any
+        threads waiting in :py:meth:`getJob`.
+
+        :arg Packet packet: The :py:class:`Packet` that was received.
+        """
+
+        handle = packet.getArgument(0)
+        name = packet.getArgument(1)
+        arguments = packet.getArgument(2)
+        return self._handleJobAssignment(packet, handle, name,
+                                         arguments, None)
 
     def handleJobAssignUnique(self, packet):
         """Handle a JOB_ASSIGN_UNIQ packet.
@@ -1273,6 +1585,10 @@ class Worker(BaseClient):
         if unique == '':
             unique = None
         arguments = packet.getArgument(3)
+        return self._handleJobAssignment(packet, handle, name,
+                                         arguments, unique)
+
+    def _handleJobAssignment(self, packet, handle, name, arguments, unique):
         job = WorkerJob(handle, name, arguments, unique)
         job.connection = packet.connection
 
