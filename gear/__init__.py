@@ -353,7 +353,12 @@ class Packet(object):
         :rtype: str
         """
         b = struct.pack('!4sii', self.code, self.ptype, len(self.data))
-        b += self.data
+        b = bytearray(b)
+        if isinstance(self.data, basestring):
+            data = bytearray(self.data, 'utf8')
+        else:
+            data = self.data
+        b += data
         return b
 
     def getArgument(self, index):
@@ -985,7 +990,7 @@ class Client(BaseClient):
         :arg Job packet: The :py:class:`Job` that was running when the server
             disconnected.
         """
-        pass
+        return job
 
 
 class FunctionRecord(object):
