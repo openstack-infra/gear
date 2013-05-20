@@ -274,16 +274,12 @@ class AdminRequest(object):
         The argument supplied with the constructor.
     **command** (str)
         The administrative command.
-    **finished_re** (compiled regular expression)
-        The regular expression used to determine when the response is
-        complete.
     """
 
     log = logging.getLogger("gear.AdminRequest")
 
     command = None
     arguments = []
-    finished_re = None
     response = None
 
     def __init__(self, *arguments):
@@ -304,8 +300,13 @@ class AdminRequest(object):
         return cmd
 
     def isComplete(self, data):
-        if self.finished_re.search(data):
-            self.response = data
+        if data[-3:] == '\n.\n':
+            return True
+        if data[-5:] == '\r\n.\r\n':
+            return True
+        if data == '.\n':
+            return True
+        if data == '.\r\n':
             return True
         return False
 
@@ -325,7 +326,6 @@ class StatusAdminRequest(AdminRequest):
     The response from gearman may be found in the **response** attribute.
     """
     command = 'status'
-    finished_re = re.compile('^\.\r?\n', re.M)
 
     def __init__(self):
         super(StatusAdminRequest, self).__init__()
@@ -337,7 +337,6 @@ class ShowJobsAdminRequest(AdminRequest):
     The response from gearman may be found in the **response** attribute.
     """
     command = 'show jobs'
-    finished_re = re.compile('^\.\r?\n', re.M)
 
     def __init__(self):
         super(ShowJobsAdminRequest, self).__init__()
@@ -350,7 +349,6 @@ class ShowUniqueJobsAdminRequest(AdminRequest):
     """
 
     command = 'show unique jobs'
-    finished_re = re.compile('^\.\r?\n', re.M)
 
     def __init__(self):
         super(ShowUniqueJobsAdminRequest, self).__init__()
@@ -365,10 +363,14 @@ class CancelJobAdminRequest(AdminRequest):
     """
 
     command = 'cancel job'
-    finished_re = re.compile('^(OK|ERR .*)\r?\n', re.M)
 
     def __init__(self, handle):
         super(CancelJobAdminRequest, self).__init__(handle)
+
+    def isComplete(self, data):
+        if data[-1] == '\n':
+            return True
+        return False
 
 
 class VersionAdminRequest(AdminRequest):
@@ -378,10 +380,14 @@ class VersionAdminRequest(AdminRequest):
     """
 
     command = 'version'
-    finished_re = re.compile('^(OK .*)\r?\n', re.M)
 
     def __init__(self):
         super(VersionAdminRequest, self).__init__()
+
+    def isComplete(self, data):
+        if data[-1] == '\n':
+            return True
+        return False
 
 
 class Packet(object):
