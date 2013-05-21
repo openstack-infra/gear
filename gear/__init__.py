@@ -15,7 +15,6 @@
 import logging
 import os
 import Queue
-import re
 import select
 import socket
 import struct
@@ -189,7 +188,7 @@ class Connection(object):
             else:
                 if len(packet) == 12:
                     code, ptype, datalen = struct.unpack('!4sii', packet)
-                if len(packet) == datalen+12:
+                if len(packet) == datalen + 12:
                     return Packet(code, ptype, packet[12:], connection=self)
 
     def sendAdminRequest(self, request):
@@ -300,13 +299,11 @@ class AdminRequest(object):
         return cmd
 
     def isComplete(self, data):
-        if data[-3:] == '\n.\n':
-            return True
-        if data[-5:] == '\r\n.\r\n':
-            return True
-        if data == '.\n':
-            return True
-        if data == '.\r\n':
+        if (data[-3:] == '\n.\n' or
+            data[-5:] == '\r\n.\r\n' or
+            data == '.\n' or
+            data == '.\r\n'):
+            self.response = data
             return True
         return False
 
@@ -369,6 +366,7 @@ class CancelJobAdminRequest(AdminRequest):
 
     def isComplete(self, data):
         if data[-1] == '\n':
+            self.response = data
             return True
         return False
 
@@ -386,6 +384,7 @@ class VersionAdminRequest(AdminRequest):
 
     def isComplete(self, data):
         if data[-1] == '\n':
+            self.response = data
             return True
         return False
 
@@ -1224,7 +1223,8 @@ class Client(BaseClient):
         job.numerator = packet.getArgument(1)
         job.denominator = packet.getArgument(2)
         try:
-            job.fraction_complete = float(job.numerator)/float(job.denominator)
+            job.fraction_complete = (float(job.numerator) /
+                                     float(job.denominator))
         except Exception:
             job.fraction_complete = None
         self.log.debug("Job status; handle: %s complete: %s/%s" %
@@ -1248,7 +1248,8 @@ class Client(BaseClient):
         job.denominator = packet.getArgument(4)
 
         try:
-            job.fraction_complete = float(job.numerator)/float(job.denominator)
+            job.fraction_complete = (float(job.numerator) /
+                                     float(job.denominator))
         except Exception:
             job.fraction_complete = None
         return job
@@ -1806,14 +1807,12 @@ class WorkerJob(BaseJob):
 class ServerAdminRequest(AdminRequest):
     """An administrative request sent to a server."""
 
-    finished_re = re.compile('^.*\r?\n', re.M)
-
     def __init__(self, connection):
         super(ServerAdminRequest, self).__init__()
         self.connection = connection
 
     def isComplete(self, data):
-        if self.finished_re.search(data):
+        if data[-1] == '\n':
             self.command = data.strip()
             return True
         return False
