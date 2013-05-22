@@ -1976,7 +1976,7 @@ class Server(BaseClientServer):
         request.connection.conn.send(".\n")
 
     def wakeConnections(self):
-        p = Packet(constants.REQ, constants.NOOP, '')
+        p = Packet(constants.RES, constants.NOOP, '')
         for connection in self.active_connections:
             if connection.state == 'SLEEP':
                 connection.sendPacket(p)
@@ -1993,7 +1993,7 @@ class Server(BaseClientServer):
                               str(packet.connection.max_handle))
         job = BaseJob(name, arguments, unique, handle)
         job.connection = packet.connection
-        p = Packet(constants.REQ, constants.JOB_CREATED, handle)
+        p = Packet(constants.RES, constants.JOB_CREATED, handle)
         packet.connection.sendPacket(p)
         self.jobs[handle] = job
         self.queue.append(job)
@@ -2020,11 +2020,11 @@ class Server(BaseClientServer):
             unique = ''
         data = '%s\x00%s\x00%s\x00%s' % (job.handle, job.name,
                                          unique, job.arguments)
-        p = Packet(constants.REQ, constants.JOB_ASSIGN_UNIQ, data)
+        p = Packet(constants.RES, constants.JOB_ASSIGN_UNIQ, data)
         connection.sendPacket(p)
 
     def sendNoJob(self, connection):
-        p = Packet(constants.REQ, constants.NO_JOB, "")
+        p = Packet(constants.RES, constants.NO_JOB, "")
         connection.sendPacket(p)
 
     def handlePreSleep(self, packet):
@@ -2055,6 +2055,7 @@ class Server(BaseClientServer):
         job = self.jobs.get(handle)
         if not job:
             raise UnknownJobError()
+        packet.code = constants.RES
         job.connection.sendPacket(packet)
         if finished:
             del self.jobs[handle]
