@@ -1992,7 +1992,9 @@ class Server(BaseClientServer):
         packet.connection.max_handle += 1
         handle = 'H:%s:%s' % (packet.connection.host,
                               str(packet.connection.max_handle))
-        job = BaseJob(name, arguments, unique, handle)
+        job = Job(name, arguments, unique)
+        job.handle = handle
+        job._setHandleReceived()
         job.connection = packet.connection
         p = Packet(constants.RES, constants.JOB_CREATED, handle)
         packet.connection.sendPacket(p)
@@ -2005,6 +2007,7 @@ class Server(BaseClientServer):
             if job.name in connection.functions:
                 if not peek:
                     self.queue.remove(job)
+                job.running = True
                 return job
         return None
 
@@ -2049,6 +2052,12 @@ class Server(BaseClientServer):
         self.handlePassthrough(packet)
 
     def handleWorkStatus(self, packet):
+        handle = packet.getArgument(0)
+        job = self.jobs.get(handle)
+        if not job:
+            raise UnknownJobError()
+        job.numerator = packet.getArgument(1)
+        job.denominator = packet.getArgument(2)
         self.handlePassthrough(packet)
 
     def handlePassthrough(self, packet, finished=False):
@@ -2080,3 +2089,27 @@ class Server(BaseClientServer):
     def handleResetAbilities(self, packet):
         self.log.debug("Resetting functions for %s" % packet.connection)
         packet.connection.functions = set()
+
+    def handleGetStatus(self, packet):
+        handle = packet.getArgument(0)
+        self.log.debug("Getting status for %s" % handle)
+
+        known = 0
+        running = 0
+        numerator = ''
+        denominator = ''
+        job = self.jobs.get(handle)
+        if job:
+            known = 1
+            if job.running:
+                running = 1
+            numerator = job.numerator
+            denominator = job.denominator
+
+        data = (handle + '\x00' +
+                str(known) + '\x00' +
+                str(running) + '\x00' +
+                str(numerator) + '\x00' +
+                str(denominator))
+        p = Packet(constants.RES, constants.STATUS_RES, data)
+        packet.connection.sendPacket(p)
