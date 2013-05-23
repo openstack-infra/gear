@@ -593,9 +593,10 @@ class BaseClientServer(object):
                         if os.read(self.wake_read, 1) == '\n':
                             break
                     return
+                conn = conn_dict[fd]
                 if event & select.POLLIN:
                     self.log.debug("Processing input on %s" % conn)
-                    p = conn_dict[fd].readPacket()
+                    p = conn.readPacket()
                     if p:
                         if isinstance(p, Packet):
                             self.handlePacket(p)
@@ -603,11 +604,11 @@ class BaseClientServer(object):
                             self.handleAdminRequest(p)
                     else:
                         self.log.debug("Received no data on %s" % conn)
-                        self._lostConnection(conn_dict[fd])
+                        self._lostConnection(conn)
                         return
                 else:
                     self.log.debug("Received error event on %s" % conn)
-                    self._lostConnection(conn_dict[fd])
+                    self._lostConnection(conn)
                     return
 
     def handlePacket(self, packet):
