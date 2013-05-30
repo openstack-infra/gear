@@ -57,6 +57,37 @@ class TimeoutError(Exception):
     pass
 
 
+class GearmanError(Exception):
+    pass
+
+
+class Task(object):
+    def __init__(self):
+        self._wait_event = threading.Event()
+
+    def setComplete(self):
+        self._wait_event.set()
+
+    def wait(self, timeout=None):
+        """Wait for a response from Gearman.
+
+        :arg int timeout: If not None, return after this many seconds if no
+            response has been received (default: None).
+        """
+
+        return self._wait_event.wait(timeout)
+
+
+class SubmitJobTask(Task):
+    def __init__(self, job):
+        super(SubmitJobTask, self).__init__()
+        self.job = job
+
+
+class OptionReqTask(Task):
+    pass
+
+
 class Connection(object):
     """A Connection to a Gearman Server."""
 
@@ -73,8 +104,8 @@ class Connection(object):
         self.conn = None
         self.connected = False
         self.connect_time = None
-        self.pending_jobs = []
         self.related_jobs = {}
+        self.pending_tasks = []
         self.admin_requests = []
         self.echo_conditions = {}
         self.options = set()
@@ -546,7 +577,7 @@ class BaseClientServer(object):
         # it and return ASAP and let the connection thread deal with it.
         self.log.debug("Marking %s as disconnected" % conn)
         self.connections_condition.acquire()
-        jobs = conn.pending_jobs + conn.related_jobs.values()
+        jobs = conn.related_jobs.values()
         self.active_connections.remove(conn)
         self.inactive_connections.append(conn)
         self.connections_condition.notifyAll()
@@ -992,6 +1023,12 @@ class BaseClient(BaseClientServer):
         self.log.error("Received ERROR packet: %s: %s" %
                        (packet.getArgument(0),
                         packet.getArgument(1)))
+        try:
+            task = packet.connection.pending_tasks.pop(0)
+            task.setComplete()
+        except Exception:
+            self.log.exception("Exception while handling error packet:")
+            self._lostConnection(packet.connection)
 
 
 class Client(BaseClient):
@@ -1018,25 +1055,61 @@ class Client(BaseClient):
         try:
             super(Client, self)._onConnect(conn)
             for name in self.options:
-                p = Packet(constants.REQ, constants.OPTION_REQ, name)
-                conn.sendPacket(p)
+                self._setOptionConnection(name, conn)
         finally:
             self.broadcast_lock.release()
 
-    def setOption(self, name):
+    def _setOptionConnection(self, name, conn):
+        # Set an option on a connection
+        packet = Packet(constants.REQ, constants.OPTION_REQ, name)
+        task = OptionReqTask()
+        try:
+            conn.pending_tasks.append(task)
+            self.sendPacket(packet, conn)
+        except Exception:
+            # Error handling is all done by sendPacket
+            task = None
+        return task
+
+    def setOption(self, name, timeout=30):
         """Set an option for all connections.
 
         :arg str name: The option name to set.
+        :arg int timeout: How long to wait (in seconds) for a response
+            from the server before giving up (default: 30 seconds).
+        :returns: True if the option was set on all connections,
+            otherwise False
+        :rtype: bool
         """
+        tasks = {}
         self.broadcast_lock.acquire()
+
         try:
             self.options.add(name)
-            p = Packet(constants.REQ, constants.OPTION_REQ, name)
-            self.broadcast(p)
+            connections = self.active_connections[:]
+            for connection in connections:
+                task = self._setOptionConnection(name, connection)
+                if task:
+                    tasks[task] = connection
         finally:
             self.broadcast_lock.release()
 
-    def submitJob(self, job, background=False, precedence=PRECEDENCE_NORMAL):
+        success = True
+        for task in tasks.keys():
+            complete = task.wait(timeout)
+            conn = tasks[task]
+            if not complete:
+                self.log.error("Connection %s timed out waiting for a "
+                               "response to an option request: %s" %
+                               (conn, name))
+                self._lostConnection(conn)
+                continue
+            if name not in conn.options:
+                success = False
+        return success
+
+    def submitJob(self, job, background=False, precedence=PRECEDENCE_NORMAL,
+                  timeout=30):
         """Submit a job to a Gearman server.
 
         Submits the provided job to the next server in this client's
@@ -1050,6 +1123,8 @@ class Client(BaseClient):
         :arg int precedence: Whether the job should have normal, low, or
             high precedence.  One of :py:data:`PRECEDENCE_NORMAL`,
             :py:data:`PRECEDENCE_LOW`, or :py:data:`PRECEDENCE_HIGH`
+        :arg int timeout: How long to wait (in seconds) for a response
+            from the server before giving up (default: 30 seconds).
         :raises ConfigurationError: If an invalid precendence value
             is supplied.
         """
@@ -1076,21 +1151,31 @@ class Client(BaseClient):
                 cmd = constants.SUBMIT_JOB_HIGH
             else:
                 raise ConfigurationError("Invalid precedence value")
-        p = Packet(constants.REQ, cmd, data)
+        packet = Packet(constants.REQ, cmd, data)
         while True:
             conn = self.getConnection()
-            conn.pending_jobs.append(job)
+            task = SubmitJobTask(job)
+            conn.pending_tasks.append(task)
             try:
-                conn.sendPacket(p)
-                job.connection = conn
-                return
+                self.sendPacket(packet, conn)
             except Exception:
-                self.log.exception("Exception while submitting job %s to %s" %
-                                   (job, conn))
-                conn.pending_jobs.remove(job)
-                # If we can't send the packet, discard the connection and
-                # try again
+                # Error handling is all done by sendPacket
+                continue
+            complete = task.wait(timeout)
+            if not complete:
+                self.log.error("Connection %s timed out waiting for a "
+                               "response to a submit job request: %s" %
+                               (conn, job))
                 self._lostConnection(conn)
+                continue
+            if not job.handle:
+                self.log.error("Connection %s sent an error in "
+                               "response to a submit job request: %s" %
+                               (conn, job))
+                continue
+            job.connection = conn
+            return
+        raise GearmanError("Unable to submit job to any connected servers")
 
     def handleJobCreated(self, packet):
         """Handle a JOB_CREATED packet.
@@ -1102,11 +1187,18 @@ class Client(BaseClient):
         :returns: The :py:class:`Job` object associated with the job request.
         :rtype: :py:class:`Job`
         """
+        task = packet.connection.pending_tasks.pop(0)
+        if not isinstance(task, SubmitJobTask):
+            msg = ("Unexpected response received to submit job "
+                   "request: %s" % packet)
+            self.log.error(msg)
+            self._lostConnection(packet.connection)
+            raise GearmanError(msg)
 
-        job = packet.connection.pending_jobs.pop(0)
+        job = task.job
         job.handle = packet.data
         packet.connection.related_jobs[job.handle] = job
-        job._setHandleReceived()
+        task.setComplete()
         self.log.debug("Job created; handle: %s" % job.handle)
         return job
 
@@ -1263,7 +1355,16 @@ class Client(BaseClient):
         :arg Packet packet: The :py:class:`Packet` that was received.
         :returns: None.
         """
+        task = packet.connection.pending_tasks.pop(0)
+        if not isinstance(task, OptionReqTask):
+            msg = ("Unexpected response received to option "
+                   "request: %s" % packet)
+            self.log.error(msg)
+            self._lostConnection(packet.connection)
+            raise GearmanError(msg)
+
         packet.connection.handleOptionRes(packet.getArgument(0))
+        task.setComplete()
 
     def handleDisconnect(self, job):
         """Handle a Gearman server disconnection.
@@ -1684,7 +1785,6 @@ class Job(BaseJob):
 
     def __init__(self, name, arguments, unique=None):
         super(Job, self).__init__(name, arguments, unique)
-        self._wait_event = threading.Event()
         self.data = []
         self.exception = None
         self.warning = False
@@ -1695,18 +1795,6 @@ class Job(BaseJob):
         self.fraction_complete = None
         self.known = None
         self.running = None
-
-    def _setHandleReceived(self):
-        self._wait_event.set()
-
-    def waitForHandle(self, timeout=None):
-        """Wait until the Job handle has been recieved from Gearman.
-
-        :arg int timeout: If not None, return after this many seconds if no
-            handle has been received (default: None).
-        """
-
-        self._wait_event.wait(timeout)
 
 
 class WorkerJob(BaseJob):
@@ -1994,7 +2082,6 @@ class Server(BaseClientServer):
                               str(packet.connection.max_handle))
         job = Job(name, arguments, unique)
         job.handle = handle
-        job._setHandleReceived()
         job.connection = packet.connection
         p = Packet(constants.RES, constants.JOB_CREATED, handle)
         packet.connection.sendPacket(p)
