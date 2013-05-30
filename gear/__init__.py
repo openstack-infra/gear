@@ -222,15 +222,22 @@ class Connection(object):
                 if len(packet) == datalen + 12:
                     return Packet(code, ptype, packet[12:], connection=self)
 
-    def sendAdminRequest(self, request):
+    def sendAdminRequest(self, request, timeout=90):
         """Send an administrative request to the server.
 
         :arg AdminRequest request: The :py:class:`AdminRequest` to send.
+        :arg numeric timeout: Number of seconds to wait until the response
+            is received.  If None, wait forever (default: 90 seconds).
+        :raises TimeoutError: If the timeout is reached before the response
+            is received.
         """
         self.admin_requests.append(request)
         self.conn.send(request.getCommand())
+        complete = request.waitForResponse(timeout)
+        if not complete:
+            raise TimeoutError()
 
-    def echo(self, data=None, timeout=None):
+    def echo(self, data=None, timeout=30):
         """Perform an echo test on the server.
 
         This method waits until the echo response has been received or the
@@ -239,7 +246,7 @@ class Connection(object):
         :arg str data: The data to request be echoed.  If None, a random
             unique string will be generated.
         :arg numeric timeout: Number of seconds to wait until the response
-            is received.  If None, wait forever.
+            is received.  If None, wait forever (default: 30 seconds).
         :raises TimeoutError: If the timeout is reached before the response
             is received.
         """
@@ -341,11 +348,8 @@ class AdminRequest(object):
     def setComplete(self):
         self.wait_event.set()
 
-    def waitForResponse(self):
-        """Blocks until the complete response has been received from
-        Gearman.
-        """
-        self.wait_event.wait()
+    def waitForResponse(self, timeout=None):
+        return self.wait_event.wait(timeout)
 
 
 class StatusAdminRequest(AdminRequest):
