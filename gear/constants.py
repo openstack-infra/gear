@@ -79,5 +79,5 @@ for i, name in types.items():
     globals()[name] = i
     __doc__ += '\n.. py:data:: %s\n' % name
 
-REQ = '\x00REQ'
-RES = '\x00RES'
+REQ = b'\x00REQ'
+RES = b'\x00RES'
