@@ -466,15 +466,20 @@ class Packet(object):
         b += data
         return b
 
-    def getArgument(self, index):
+    def getArgument(self, index, last=False):
         """Get the nth argument from the packet data.
 
         :arg int index: The argument index to look up.
+        :arg bool last: Whether this is the last argument (and thus
+            nulls should be ignored)
         :returns: The argument value.
         :rtype: str
         """
 
-        return self.data.split('\x00')[index]
+        parts = self.data.split(b'\x00')
+        if not last:
+            return parts[index]
+        return b'\x00'.join(parts[index:])
 
     def getJob(self):
         """Get the :py:class:`Job` associated with the job handle in
@@ -1014,7 +1019,7 @@ class BaseClient(BaseClientServer):
         :arg Packet packet: The :py:class:`Packet` that was received.
         :returns: None
         """
-        packet.connection.handleEchoRes(packet.getArgument(0))
+        packet.connection.handleEchoRes(packet.getArgument(0, True))
 
     def handleError(self, packet):
         """Handle an ERROR packet.
@@ -1219,7 +1224,7 @@ class Client(BaseClient):
         """
 
         job = packet.getJob()
-        data = packet.getArgument(1)
+        data = packet.getArgument(1, True)
         if data:
             job.data.append(data)
         job.complete = True
@@ -1261,7 +1266,7 @@ class Client(BaseClient):
         """
 
         job = packet.getJob()
-        job.exception = packet.getArgument(1)
+        job.exception = packet.getArgument(1, True)
         job.complete = True
         job.failure = True
         del packet.connection.related_jobs[job.handle]
@@ -1280,7 +1285,7 @@ class Client(BaseClient):
         """
 
         job = packet.getJob()
-        data = packet.getArgument(1)
+        data = packet.getArgument(1, True)
         if data:
             job.data.append(data)
         self.log.debug("Job data; handle: %s data: %s" %
@@ -1298,7 +1303,7 @@ class Client(BaseClient):
         """
 
         job = packet.getJob()
-        data = packet.getArgument(1)
+        data = packet.getArgument(1, True)
         if data:
             job.data.append(data)
         job.warning = True
@@ -1679,7 +1684,7 @@ class Worker(BaseClient):
 
         handle = packet.getArgument(0)
         name = packet.getArgument(1)
-        arguments = packet.getArgument(2)
+        arguments = packet.getArgument(2, True)
         return self._handleJobAssignment(packet, handle, name,
                                          arguments, None)
 
@@ -1697,7 +1702,7 @@ class Worker(BaseClient):
         unique = packet.getArgument(2)
         if unique == '':
             unique = None
-        arguments = packet.getArgument(3)
+        arguments = packet.getArgument(3, True)
         return self._handleJobAssignment(packet, handle, name,
                                          arguments, unique)
 
@@ -2080,7 +2085,7 @@ class Server(BaseClientServer):
         unique = packet.getArgument(1)
         if not unique:
             unique = None
-        arguments = packet.getArgument(2)
+        arguments = packet.getArgument(2, True)
         packet.connection.max_handle += 1
         handle = 'H:%s:%s' % (packet.connection.host,
                               str(packet.connection.max_handle))
