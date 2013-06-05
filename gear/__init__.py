@@ -75,7 +75,8 @@ class Task(object):
             response has been received (default: None).
         """
 
-        return self._wait_event.wait(timeout)
+        self._wait_event.wait(timeout)
+        return self._wait_event.is_set()
 
 
 class SubmitJobTask(Task):
@@ -349,7 +350,8 @@ class AdminRequest(object):
         self.wait_event.set()
 
     def waitForResponse(self, timeout=None):
-        return self.wait_event.wait(timeout)
+        self.wait_event.wait(timeout)
+        return self.wait_event.is_set()
 
 
 class StatusAdminRequest(AdminRequest):
