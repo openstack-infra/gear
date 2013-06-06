@@ -1983,7 +1983,9 @@ class Server(BaseClientServer):
 
     def __init__(self, port=4730):
         self.port = port
-        self.queue = []
+        self.high_queue = []
+        self.normal_queue = []
+        self.low_queue = []
         self.jobs = {}
         self.functions = set()
         self.connect_wake_read, self.connect_wake_write = os.pipe()
@@ -2068,6 +2070,17 @@ class Server(BaseClientServer):
         self.connections_condition.notifyAll()
         self.connections_condition.release()
 
+    def getQueue(self):
+        """Returns a copy of all internal queues in a flattened form.
+
+        :returns: The Gearman queue.
+        :rtype: list of :py:class:`WorkerJob`.
+        """
+        ret = []
+        for queue in [self.high_queue, self.normal_queue, self.low_queue]:
+            ret += queue
+        return ret
+
     def handleAdminRequest(self, request):
         if request.command.startswith(b'cancel job'):
             self.handleCancelJob(request)
@@ -2081,12 +2094,13 @@ class Server(BaseClientServer):
         handle = words[2]
 
         if handle in self.jobs:
-            for job in self.queue:
-                if handle == job.handle:
-                    self.queue.remove(job)
-                    del self.jobs[handle]
-                    request.connection.conn.send(b'OK\n')
-                    return
+            for queue in [self.high_queue, self.normal_queue, self.low_queue]:
+                for job in queue:
+                    if handle == job.handle:
+                        queue.remove(job)
+                        del self.jobs[handle]
+                        request.connection.conn.send(b'OK\n')
+                        return
         request.connection.conn.send(b'ERR UNKNOWN_JOB\n')
 
     def handleStatus(self, request):
@@ -2095,8 +2109,9 @@ class Server(BaseClientServer):
             # Total, running, workers
             functions[function] = [0, 0, 0]
 
-        for job in self.queue:
-            functions[job.name][0] += 1
+        for queue in [self.high_queue, self.normal_queue, self.low_queue]:
+            for job in queue:
+                functions[job.name][0] += 1
         for job in self.jobs.values():
             functions[job.name][0] += 1
             functions[job.name][1] += 1
@@ -2127,7 +2142,7 @@ class Server(BaseClientServer):
                 connection.sendPacket(p)
                 connection.changeState("AWAKE")
 
-    def handleSubmitJob(self, packet):
+    def _handleSubmitJob(self, packet, precedence):
         name = packet.getArgument(0)
         unique = packet.getArgument(1)
         if not unique:
@@ -2142,16 +2157,31 @@ class Server(BaseClientServer):
         p = Packet(constants.RES, constants.JOB_CREATED, handle)
         packet.connection.sendPacket(p)
         self.jobs[handle] = job
-        self.queue.append(job)
+        if precedence == PRECEDENCE_HIGH:
+            self.high_queue.append(job)
+        elif precedence == PRECEDENCE_NORMAL:
+            self.normal_queue.append(job)
+        elif precedence == PRECEDENCE_LOW:
+            self.low_queue.append(job)
         self.wakeConnections()
 
+    def handleSubmitJob(self, packet):
+        return self._handleSubmitJob(packet, PRECEDENCE_NORMAL)
+
+    def handleSubmitJobHigh(self, packet):
+        return self._handleSubmitJob(packet, PRECEDENCE_HIGH)
+
+    def handleSubmitJobLow(self, packet):
+        return self._handleSubmitJob(packet, PRECEDENCE_LOW)
+
     def getJobForConnection(self, connection, peek=False):
-        for job in self.queue:
-            if job.name in connection.functions:
-                if not peek:
-                    self.queue.remove(job)
-                job.running = True
-                return job
+        for queue in [self.high_queue, self.normal_queue, self.low_queue]:
+            for job in queue:
+                if job.name in connection.functions:
+                    if not peek:
+                        queue.remove(job)
+                    job.running = True
+                    return job
         return None
 
     def handleGrabJobUniq(self, packet):
