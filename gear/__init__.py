@@ -439,6 +439,17 @@ class VersionAdminRequest(AdminRequest):
         return False
 
 
+class WorkersAdminRequest(AdminRequest):
+    """A "workers" administrative request.
+
+    The response from gearman may be found in the **response** attribute.
+    """
+    command = b'workers'
+
+    def __init__(self):
+        super(WorkersAdminRequest, self).__init__()
+
+
 class Packet(object):
     """A data packet received from or to be sent over a
     :py:class:`Connection`.
@@ -2062,6 +2073,8 @@ class Server(BaseClientServer):
             self.handleCancelJob(request)
         elif request.command.startswith(b'status'):
             self.handleStatus(request)
+        elif request.command.startswith(b'workers'):
+            self.handleWorkers(request)
 
     def handleCancelJob(self, request):
         words = request.command.split()
@@ -2094,6 +2107,17 @@ class Server(BaseClientServer):
             request.connection.conn.send(("%s\t%s\t%s\t%s\n" %
                                          (name, values[0], values[1],
                                           values[2])).encode('utf8'))
+        request.connection.conn.send(b'.\n')
+
+    def handleWorkers(self, request):
+        for connection in self.active_connections:
+            fd = connection.conn.fileno()
+            ip = connection.host
+            client_id = connection.client_id or '-'
+            functions = ' '.join(connection.functions)
+            request.connection.conn.send(("%s %s %s : %s\n" %
+                                          (fd, ip, client_id, functions))
+                                         .encode('utf8'))
         request.connection.conn.send(b'.\n')
 
     def wakeConnections(self):
