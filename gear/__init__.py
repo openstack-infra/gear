@@ -1933,7 +1933,71 @@ class WorkerJob(BaseJob):
         p = Packet(constants.REQ, constants.WORK_EXCEPTION, data)
         self.connection.sendPacket(p)
 
+
 # Below are classes for use in the server implementation:
+class ServerJob(Job):
+    """A job record for use in a server.
+
+    :arg str name: The name of the job.
+    :arg bytes arguments: The opaque data blob to be passed to the worker
+        as arguments.
+    :arg str unique: A byte string to uniquely identify the job to Gearman
+        (optional).
+
+    The following instance attributes are available:
+
+    **name** (str)
+        The name of the job.
+    **arguments** (bytes)
+        The opaque data blob passed to the worker as arguments.
+    **unique** (str or None)
+        The unique ID of the job (if supplied).
+    **handle** (bytes or None)
+        The Gearman job handle.  None if no job handle has been received yet.
+    **data** (list of byte-arrays)
+        The result data returned from Gearman.  Each packet appends an
+        element to the list.  Depending on the nature of the data, the
+        elements may need to be concatenated before use.
+    **exception** (bytes or None)
+        Exception information returned from Gearman.  None if no exception
+        has been received.
+    **warning** (bool)
+        Whether the worker has reported a warning.
+    **complete** (bool)
+        Whether the job is complete.
+    **failure** (bool)
+        Whether the job has failed.  Only set when complete is True.
+    **numerator** (bytes or None)
+        The numerator of the completion ratio reported by the worker.
+        Only set when a status update is sent by the worker.
+    **denominator** (bytes or None)
+        The denominator of the completion ratio reported by the
+        worker.  Only set when a status update is sent by the worker.
+    **fraction_complete** (float or None)
+        The fractional complete ratio reported by the worker.  Only set when
+        a status update is sent by the worker.
+    **known** (bool or None)
+        Whether the job is known to Gearman.  Only set by handleStatusRes() in
+        response to a getStatus() query.
+    **running** (bool or None)
+        Whether the job is running.  Only set by handleStatusRes() in
+        response to a getStatus() query.
+    **client_connection** :py:class:`Connection`
+        The client connection associated with the job.
+    **worker_connection** (:py:class:`Connection` or None)
+        The worker connection associated with the job.  Only set after the job
+        has been assigned to a worker.
+    """
+
+    log = logging.getLogger("gear.ServerJob")
+
+    def __init__(self, handle, name, arguments, client_connection,
+                 unique=None):
+        super(ServerJob, self).__init__(name, arguments, unique)
+        self.handle = handle
+        self.client_connection = client_connection
+        self.worker_connection = None
+        del self.connection
 
 
 class ServerAdminRequest(AdminRequest):
@@ -1960,6 +2024,7 @@ class ServerConnection(Connection):
         self.max_handle = 0
         self.client_id = None
         self.functions = set()
+        self.related_jobs = {}
         self.changeState("INIT")
 
     def _getAdminRequest(self):
@@ -2062,13 +2127,26 @@ class Server(BaseClientServer):
         self.socket.close()
 
     def _lostConnection(self, conn):
-        # Called as soon as a connection is detected as faulty.  Remove
-        # it and return ASAP and let the connection thread deal with it.
+        # Called as soon as a connection is detected as faulty.
         self.log.debug("Marking %s as disconnected" % conn)
         self.connections_condition.acquire()
+        jobs = conn.related_jobs.values()
         self.active_connections.remove(conn)
         self.connections_condition.notifyAll()
         self.connections_condition.release()
+        for job in jobs:
+            if job.worker_connection == conn:
+                # the worker disconnected, alert the client
+                try:
+                    p = Packet(constants.REQ, constants.WORK_FAIL, job.handle)
+                    job.client_connection.sendPacket(p)
+                except Exception:
+                    self.log.exception("Sending WORK_FAIL to client after "
+                                       "worker disconnect failed:")
+            del job.client_connection.related_jobs[job.handle]
+            if job.worker_connection:
+                del job.worker_connection.related_jobs[job.handle]
+            del self.jobs[job.handle]
 
     def getQueue(self):
         """Returns a copy of all internal queues in a flattened form.
@@ -2151,12 +2229,11 @@ class Server(BaseClientServer):
         packet.connection.max_handle += 1
         handle = ('H:%s:%s' % (packet.connection.host,
                                packet.connection.max_handle)).encode('utf8')
-        job = Job(name, arguments, unique)
-        job.handle = handle
-        job.connection = packet.connection
+        job = ServerJob(handle, name, arguments, packet.connection, unique)
         p = Packet(constants.RES, constants.JOB_CREATED, handle)
         packet.connection.sendPacket(p)
         self.jobs[handle] = job
+        packet.connection.related_jobs[handle] = job
         if precedence == PRECEDENCE_HIGH:
             self.high_queue.append(job)
         elif precedence == PRECEDENCE_NORMAL:
@@ -2180,6 +2257,8 @@ class Server(BaseClientServer):
                 if job.name in connection.functions:
                     if not peek:
                         queue.remove(job)
+                        connection.related_jobs[job.handle] = job
+                        job.worker_connection = connection
                     job.running = True
                     return job
         return None
@@ -2238,9 +2317,11 @@ class Server(BaseClientServer):
         if not job:
             raise UnknownJobError()
         packet.code = constants.RES
-        job.connection.sendPacket(packet)
+        job.client_connection.sendPacket(packet)
         if finished:
             del self.jobs[handle]
+            del job.client_connection.related_jobs[handle]
+            del job.worker_connection.related_jobs[handle]
 
     def handleSetClientID(self, packet):
         name = packet.getArgument(0)
@@ -2275,8 +2356,8 @@ class Server(BaseClientServer):
             known = 1
             if job.running:
                 running = 1
-            numerator = job.numerator
-            denominator = job.denominator
+            numerator = job.numerator or b''
+            denominator = job.denominator or b''
 
         data = (handle + b'\x00' +
                 str(known).encode('utf8') + b'\x00' +
