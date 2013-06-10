@@ -540,9 +540,11 @@ class BaseClientServer(object):
 
         self.poll_thread = threading.Thread(name="Gearman client poll",
                                             target=self._doPollLoop)
+        self.poll_thread.daemon = True
         self.poll_thread.start()
         self.connect_thread = threading.Thread(name="Gearman client connect",
                                                target=self._doConnectLoop)
+        self.connect_thread.daemon = True
         self.connect_thread.start()
 
     def _doConnectLoop(self):
