@@ -2188,13 +2188,10 @@ class Server(BaseClientServer):
         for function in self.functions:
             # Total, running, workers
             functions[function] = [0, 0, 0]
-
-        for queue in [self.high_queue, self.normal_queue, self.low_queue]:
-            for job in queue:
-                functions[job.name][0] += 1
         for job in self.jobs.values():
             functions[job.name][0] += 1
-            functions[job.name][1] += 1
+            if job.running:
+                functions[job.name][1] += 1
         for connection in self.active_connections:
             for function in connection.functions:
                 functions[function][2] += 1
