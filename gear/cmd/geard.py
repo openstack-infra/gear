@@ -43,6 +43,12 @@ class Server(object):
         parser.add_argument('--pidfile', dest='pidfile',
                             default='/var/run/geard/geard.pid',
                             help='PID file')
+        parser.add_argument('--ssl-ca', dest='ssl_ca', metavar='PATH',
+                            help='path to CA certificate')
+        parser.add_argument('--ssl-cert', dest='ssl_cert', metavar='PATH',
+                            help='path to SSL public certificate')
+        parser.add_argument('--ssl-key', dest='ssl_key', metavar='PATH',
+                            help='path to SSL private key')
         parser.add_argument('--version', dest='version', action='store_true',
                             help='show version')
         self.args = parser.parse_args()
@@ -61,7 +67,10 @@ class Server(object):
                                     filename="/var/log/geard/geard.log")
 
     def main(self):
-        self.server = gear.Server(self.args.port)
+        self.server = gear.Server(self.args.port,
+                                  self.args.ssl_key,
+                                  self.args.ssl_cert,
+                                  self.args.ssl_ca)
         signal.pause()
 
 

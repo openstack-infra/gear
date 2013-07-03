@@ -57,6 +57,20 @@ An example of a Gearman worker::
         job = worker.getJob()
         job.sendWorkComplete(job.arguments.reverse())
 
+SSL Connections
+---------------
+
+For versions of Gearman supporting SSL connections, specify the
+files containing the SSL private key, public certificate, and
+CA certificate in the addServer() call. For example::
+
+     ssl_key = '/path/to/key.pem'
+     ssl_cert = '/path/to/cert.pem'
+     ssl_ca = '/path/to/ca.pem'
+     client.addServer('gearman.example.com', 4730, ssl_key, ssl_cert, ssl_ca)
+
+All three files must be specified for SSL to be used.
+
 API Reference
 =============
 
