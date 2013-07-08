@@ -16,6 +16,7 @@ import logging
 import os
 import select
 import socket
+import ssl
 import struct
 import threading
 import time
@@ -106,9 +107,12 @@ class Connection(object):
 
     log = logging.getLogger("gear.Connection")
 
-    def __init__(self, host, port):
+    def __init__(self, host, port, ssl_key=None, ssl_cert=None, ssl_ca=None):
         self.host = host
         self.port = port
+        self.ssl_key = ssl_key
+        self.ssl_cert = ssl_cert
+        self.ssl_ca = ssl_ca
 
         self.echo_lock = threading.Lock()
         self._init()
@@ -153,6 +157,15 @@ class Connection(object):
             except socket.error:
                 s = None
                 continue
+
+            if all([self.ssl_key, self.ssl_cert, self.ssl_ca]):
+                self.log.debug("Using SSL")
+                s = ssl.wrap_socket(s, ssl_version=ssl.PROTOCOL_TLSv1,
+                                    cert_reqs=ssl.CERT_REQUIRED,
+                                    keyfile=self.ssl_key,
+                                    certfile=self.ssl_cert,
+                                    ca_certs=self.ssl_ca)
+
             try:
                 s.connect(sa)
             except socket.error:
@@ -926,7 +939,8 @@ class BaseClient(BaseClientServer):
         # connection state, such as setting options or functions.
         self.broadcast_lock = threading.RLock()
 
-    def addServer(self, host, port=4730):
+    def addServer(self, host, port=4730,
+                  ssl_key=None, ssl_cert=None, ssl_ca=None):
         """Add a server to the client's connection pool.
 
         Any number of Gearman servers may be added to a client.  The
@@ -941,8 +955,13 @@ class BaseClient(BaseClientServer):
         ensure that a connection is ready before proceeding, see
         :py:meth:`waitForServer`.
 
+        When using SSL connections, all SSL files must be specified.
+
         :arg str host: The hostname or IP address of the server.
         :arg int port: The port on which the gearman server is listening.
+        :arg str ssl_key: Path to the SSL private key.
+        :arg str ssl_cert: Path to the SSL certificate.
+        :arg str ssl_ca: Path to the CA certificate.
         :raises ConfigurationError: If the host/port combination has
             already been added to the client.
         """
@@ -954,7 +973,7 @@ class BaseClient(BaseClientServer):
             for conn in self.active_connections + self.inactive_connections:
                 if conn.host == host and conn.port == port:
                     raise ConfigurationError("Host/port already specified")
-            conn = Connection(host, port)
+            conn = Connection(host, port, ssl_key, ssl_cert, ssl_ca)
             self.inactive_connections.append(conn)
             self.connections_condition.notifyAll()
         finally:
@@ -2048,8 +2067,11 @@ class Server(BaseClientServer):
     :arg int port: The TCP port on which to listen.
     """
 
-    def __init__(self, port=4730):
+    def __init__(self, port=4730, ssl_key=None, ssl_cert=None, ssl_ca=None):
         self.port = port
+        self.ssl_key = ssl_key
+        self.ssl_cert = ssl_cert
+        self.ssl_ca = ssl_ca
         self.high_queue = []
         self.normal_queue = []
         self.low_queue = []
@@ -2113,6 +2135,13 @@ class Server(BaseClientServer):
                     self.log.debug("Accepting new connection")
                     c, addr = self.socket.accept()
                     self.log.debug("Accepted new connection")
+                    if all([self.ssl_key, self.ssl_cert, self.ssl_ca]):
+                        c = ssl.wrap_socket(c, server_side=True,
+                                            keyfile=self.ssl_key,
+                                            certfile=self.ssl_cert,
+                                            ca_certs=self.ssl_ca,
+                                            cert_reqs=ssl.CERT_REQUIRED,
+                                            ssl_version=ssl.PROTOCOL_TLSv1)
                     conn = ServerConnection(addr, c)
                     self.connections_condition.acquire()
                     self.active_connections.append(conn)
