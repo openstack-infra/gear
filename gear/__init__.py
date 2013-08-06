@@ -2042,7 +2042,6 @@ class ServerConnection(Connection):
         self.host = addr[0]
         self.port = addr[1]
         self.conn = conn
-        self.max_handle = 0
         self.client_id = None
         self.functions = set()
         self.related_jobs = {}
@@ -2077,6 +2076,7 @@ class Server(BaseClientServer):
         self.low_queue = []
         self.jobs = {}
         self.functions = set()
+        self.max_handle = 0
         self.connect_wake_read, self.connect_wake_write = os.pipe()
 
         for res in socket.getaddrinfo(None, self.port, socket.AF_UNSPEC,
@@ -2254,9 +2254,9 @@ class Server(BaseClientServer):
         if not unique:
             unique = None
         arguments = packet.getArgument(2, True)
-        packet.connection.max_handle += 1
+        self.max_handle += 1
         handle = ('H:%s:%s' % (packet.connection.host,
-                               packet.connection.max_handle)).encode('utf8')
+                               self.max_handle)).encode('utf8')
         job = ServerJob(handle, name, arguments, packet.connection, unique)
         p = Packet(constants.RES, constants.JOB_CREATED, handle)
         packet.connection.sendPacket(p)
