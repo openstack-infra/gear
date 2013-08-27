@@ -8,3 +8,4 @@ testrepository>=0.0.13
 testresources
 testscenarios
 testtools>=0.9.27
+sphinxcontrib-programoutput
