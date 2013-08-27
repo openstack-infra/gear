@@ -2245,8 +2245,8 @@ class Server(BaseClientServer):
         p = Packet(constants.RES, constants.NOOP, b'')
         for connection in self.active_connections:
             if connection.state == 'SLEEP':
-                connection.sendPacket(p)
                 connection.changeState("AWAKE")
+                connection.sendPacket(p)
 
     def _handleSubmitJob(self, packet, precedence):
         name = packet.getArgument(0)
