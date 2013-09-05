@@ -55,7 +55,7 @@ An example of a Gearman worker::
 
     while True:
         job = worker.getJob()
-        job.sendWorkComplete(job.arguments.reverse())
+        job.sendWorkComplete(job.arguments[::-1])
 
 SSL Connections
 ---------------
@@ -156,10 +156,8 @@ AdminRequest Objects
 
 Server Usage
 ------------
+.. program-output:: geard --help
 
-A simple Gearman server is provided for convenience in unit testing,
-but is not designed for production use at scale.  It takes no
-parameters other than the port number on which to listen.
 
 Server Objects
 ^^^^^^^^^^^^^^
