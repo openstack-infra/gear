@@ -203,13 +203,20 @@ class Connection(object):
         self.disconnect()
         self.connect()
 
+    def sendRaw(self, data):
+        """Send raw data over the socket.
+
+        :arg bytes data The raw data to send
+        """
+        self.conn.send(data)
+
     def sendPacket(self, packet):
         """Send a packet to the server.
 
         :arg Packet packet: The :py:class:`Packet` to send.
         """
         self.log.debug("Sending packet: %s" % packet)
-        self.conn.send(packet.toBinary())
+        self.sendRaw(packet.toBinary())
 
     def _getAdminRequest(self):
         return self.admin_requests.pop(0)
@@ -258,7 +265,7 @@ class Connection(object):
             is received.
         """
         self.admin_requests.append(request)
-        self.conn.send(request.getCommand())
+        self.sendRaw(request.getCommand())
         complete = request.waitForResponse(timeout)
         if not complete:
             raise TimeoutError()
@@ -2208,9 +2215,9 @@ class Server(BaseClientServer):
                     if handle == job.handle:
                         queue.remove(job)
                         del self.jobs[handle]
-                        request.connection.conn.send(b'OK\n')
+                        request.connection.sendRaw(b'OK\n')
                         return
-        request.connection.conn.send(b'ERR UNKNOWN_JOB\n')
+        request.connection.sendRaw(b'ERR UNKNOWN_JOB\n')
 
     def handleStatus(self, request):
         functions = {}
@@ -2225,10 +2232,10 @@ class Server(BaseClientServer):
             for function in connection.functions:
                 functions[function][2] += 1
         for name, values in functions.items():
-            request.connection.conn.send(("%s\t%s\t%s\t%s\n" %
-                                         (name, values[0], values[1],
-                                          values[2])).encode('utf8'))
-        request.connection.conn.send(b'.\n')
+            request.connection.sendRaw(("%s\t%s\t%s\t%s\n" %
+                                       (name, values[0], values[1],
+                                        values[2])).encode('utf8'))
+        request.connection.sendRaw(b'.\n')
 
     def handleWorkers(self, request):
         for connection in self.active_connections:
@@ -2236,10 +2243,10 @@ class Server(BaseClientServer):
             ip = connection.host
             client_id = connection.client_id or '-'
             functions = ' '.join(connection.functions)
-            request.connection.conn.send(("%s %s %s : %s\n" %
-                                          (fd, ip, client_id, functions))
-                                         .encode('utf8'))
-        request.connection.conn.send(b'.\n')
+            request.connection.sendRaw(("%s %s %s : %s\n" %
+                                       (fd, ip, client_id, functions))
+                                       .encode('utf8'))
+        request.connection.sendRaw(b'.\n')
 
     def wakeConnections(self):
         p = Packet(constants.RES, constants.NOOP, b'')
