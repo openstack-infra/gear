@@ -18,6 +18,7 @@ import daemon
 import extras
 import gear
 import logging
+import logging.config
 import os
 import pbr.version
 import signal
@@ -67,6 +68,7 @@ class Server(object):
                                     filename="/var/log/geard/geard.log")
 
     def main(self):
+        self.server.setup_logging()
         self.server = gear.Server(self.args.port,
                                   self.args.ssl_key,
                                   self.args.ssl_cert,
@@ -83,7 +85,6 @@ def main():
         print("Gear version: {}".format(vi.version_string()))
         sys.exit(0)
 
-    server.setup_logging()
     if server.args.nodaemon:
         server.main()
     else:
