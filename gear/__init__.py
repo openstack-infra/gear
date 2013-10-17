@@ -114,6 +114,10 @@ class Connection(object):
         self.ssl_cert = ssl_cert
         self.ssl_ca = ssl_ca
 
+        self.use_ssl = False
+        if all([self.ssl_key, self.ssl_cert, self.ssl_ca]):
+            self.use_ssl = True
+
         self.echo_lock = threading.Lock()
         self._init()
 
@@ -158,7 +162,7 @@ class Connection(object):
                 s = None
                 continue
 
-            if all([self.ssl_key, self.ssl_cert, self.ssl_ca]):
+            if self.use_ssl:
                 self.log.debug("Using SSL")
                 s = ssl.wrap_socket(s, ssl_version=ssl.PROTOCOL_TLSv1,
                                     cert_reqs=ssl.CERT_REQUIRED,
@@ -208,7 +212,17 @@ class Connection(object):
 
         :arg bytes data The raw data to send
         """
-        self.conn.send(data)
+        while True:
+            try:
+                self.conn.send(data)
+            except ssl.SSLError as e:
+                if e.errno == ssl.SSL_ERROR_WANT_READ:
+                    continue
+                elif e.errno == ssl.SSL_ERROR_WANT_WRITE:
+                    continue
+                else:
+                    raise
+            break
 
     def sendPacket(self, packet):
         """Send a packet to the server.
@@ -220,6 +234,29 @@ class Connection(object):
 
     def _getAdminRequest(self):
         return self.admin_requests.pop(0)
+
+    def _readRawBytes(self, bytes_to_read):
+        while True:
+            try:
+                buff = self.conn.recv(bytes_to_read)
+            except ssl.SSLError as e:
+                if e.errno == ssl.SSL_ERROR_WANT_READ:
+                    continue
+                elif e.errno == ssl.SSL_ERROR_WANT_WRITE:
+                    continue
+                else:
+                    raise
+            break
+
+        bytes_read = len(buff)
+        if self.use_ssl and (bytes_read < bytes_to_read):
+            remaining = self.conn.pending()
+            while remaining and (bytes_read < bytes_to_read):
+                buff += self.conn.recv(bytes_to_read - bytes_read)
+                remaining = self.conn.pending()
+                bytes_read = len(buff)
+
+        return buff
 
     def readPacket(self):
         """Read one packet or administrative response from the server.
@@ -236,7 +273,7 @@ class Connection(object):
         admin = None
         admin_request = None
         while True:
-            c = self.conn.recv(1)
+            c = self._readRawBytes(1)
             if not c:
                 return None
             if admin is None:
@@ -2045,10 +2082,11 @@ class ServerAdminRequest(AdminRequest):
 class ServerConnection(Connection):
     """A Connection to a Gearman Client."""
 
-    def __init__(self, addr, conn):
+    def __init__(self, addr, conn, use_ssl):
         self.host = addr[0]
         self.port = addr[1]
         self.conn = conn
+        self.use_ssl = use_ssl
         self.client_id = None
         self.functions = set()
         self.related_jobs = {}
@@ -2085,6 +2123,10 @@ class Server(BaseClientServer):
         self.functions = set()
         self.max_handle = 0
         self.connect_wake_read, self.connect_wake_write = os.pipe()
+
+        self.use_ssl = False
+        if all([self.ssl_key, self.ssl_cert, self.ssl_ca]):
+            self.use_ssl = True
 
         for res in socket.getaddrinfo(None, self.port, socket.AF_UNSPEC,
                                       socket.SOCK_STREAM, 0,
@@ -2142,14 +2184,14 @@ class Server(BaseClientServer):
                     self.log.debug("Accepting new connection")
                     c, addr = self.socket.accept()
                     self.log.debug("Accepted new connection")
-                    if all([self.ssl_key, self.ssl_cert, self.ssl_ca]):
+                    if self.use_ssl:
                         c = ssl.wrap_socket(c, server_side=True,
                                             keyfile=self.ssl_key,
                                             certfile=self.ssl_cert,
                                             ca_certs=self.ssl_ca,
                                             cert_reqs=ssl.CERT_REQUIRED,
                                             ssl_version=ssl.PROTOCOL_TLSv1)
-                    conn = ServerConnection(addr, c)
+                    conn = ServerConnection(addr, c, self.use_ssl)
                     self.connections_condition.acquire()
                     self.active_connections.append(conn)
                     self.connections_condition.notifyAll()
