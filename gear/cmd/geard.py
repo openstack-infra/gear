@@ -68,7 +68,7 @@ class Server(object):
                                     filename="/var/log/geard/geard.log")
 
     def main(self):
-        self.server.setup_logging()
+        self.setup_logging()
         self.server = gear.Server(self.args.port,
                                   self.args.ssl_key,
                                   self.args.ssl_cert,
