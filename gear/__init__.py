@@ -1436,8 +1436,8 @@ class Client(BaseClient):
         """
 
         job = packet.getJob()
-        job.known = (packet.getArgument(1) == 1)
-        job.running = (packet.getArgument(2) == 1)
+        job.known = (packet.getArgument(1) == '1')
+        job.running = (packet.getArgument(2) == '1')
         job.numerator = packet.getArgument(3)
         job.denominator = packet.getArgument(4)
 

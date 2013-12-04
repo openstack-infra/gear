@@ -39,5 +39,36 @@ class ConnectionTestCase(tests.BaseTestCase):
             'host: %s port: %s>' % (self.host, self.port)))
 
 
+class TestClient(tests.BaseTestCase):
+
+    def test_handleStatusRes_1(self):
+        client = gear.Client()
+
+        packet = gear.Packet(
+            gear.constants.RES,
+            gear.constants.STATUS_RES,
+            b'H:127.0.0.1:11\x001\x001\x00\x00'
+        )
+        packet.getJob = lambda: gear.Job("", "")
+        job = client.handleStatusRes(packet)
+
+        self.assertTrue(job.known)
+        self.assertTrue(job.running)
+
+    def test_handleStatusRes_2(self):
+        client = gear.Client()
+
+        packet = gear.Packet(
+            gear.constants.RES,
+            gear.constants.STATUS_RES,
+            b'H:127.0.0.1:11\x001\x000\x00\x00'
+        )
+        packet.getJob = lambda: gear.Job("", "")
+        job = client.handleStatusRes(packet)
+
+        self.assertTrue(job.known)
+        self.assertFalse(job.running)
+
+
 def load_tests(loader, in_tests, pattern):
     return testscenarios.load_tests_apply_scenarios(loader, in_tests, pattern)
