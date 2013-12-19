@@ -29,6 +29,11 @@ try:
 except ImportError:
     import queue as queue
 
+try:
+    import statsd
+except ImportError:
+    statsd = None
+
 PRECEDENCE_NORMAL = 0
 PRECEDENCE_LOW = 1
 PRECEDENCE_HIGH = 2
@@ -2109,13 +2114,31 @@ class Server(BaseClientServer):
     (not for production use).
 
     :arg int port: The TCP port on which to listen.
+    :arg str ssl_key: Path to the SSL private key.
+    :arg str ssl_cert: Path to the SSL certificate.
+    :arg str ssl_ca: Path to the CA certificate.
+    :arg str statsd_host: statsd hostname.  None means disabled
+        (the default).
+    :arg str statsd_port: statsd port (defaults to 8125).
+    :arg str statsd_prefix: statsd key prefix.
     """
 
-    def __init__(self, port=4730, ssl_key=None, ssl_cert=None, ssl_ca=None):
+    def __init__(self, port=4730, ssl_key=None, ssl_cert=None, ssl_ca=None,
+                 statsd_host=None, statsd_port=8125, statsd_prefix=None):
         self.port = port
         self.ssl_key = ssl_key
         self.ssl_cert = ssl_cert
         self.ssl_ca = ssl_ca
+        if statsd_host:
+            if not statsd:
+                self.log.error("Unable to import statsd module")
+                self.statsd = None
+            else:
+                self.statsd = statsd.StatsClient(statsd_host,
+                                                 statsd_port,
+                                                 statsd_prefix)
+        else:
+            self.statsd = None
         self.high_queue = []
         self.normal_queue = []
         self.low_queue = []
@@ -2227,6 +2250,7 @@ class Server(BaseClientServer):
             if job.worker_connection:
                 del job.worker_connection.related_jobs[job.handle]
             del self.jobs[job.handle]
+        self._updateStats()
 
     def getQueue(self):
         """Returns a copy of all internal queues in a flattened form.
@@ -2257,11 +2281,12 @@ class Server(BaseClientServer):
                     if handle == job.handle:
                         queue.remove(job)
                         del self.jobs[handle]
+                        self._updateStats()
                         request.connection.sendRaw(b'OK\n')
                         return
         request.connection.sendRaw(b'ERR UNKNOWN_JOB\n')
 
-    def handleStatus(self, request):
+    def _getFunctionStats(self):
         functions = {}
         for function in self.functions:
             # Total, running, workers
@@ -2273,6 +2298,10 @@ class Server(BaseClientServer):
         for connection in self.active_connections:
             for function in connection.functions:
                 functions[function][2] += 1
+        return functions
+
+    def handleStatus(self, request):
+        functions = self._getFunctionStats()
         for name, values in functions.items():
             request.connection.sendRaw(("%s\t%s\t%s\t%s\n" %
                                        (name, values[0], values[1],
@@ -2297,6 +2326,47 @@ class Server(BaseClientServer):
                 connection.changeState("AWAKE")
                 connection.sendPacket(p)
 
+    def _updateStats(self):
+        if not self.statsd:
+            return
+
+        # prefix.queue.JOB.waiting
+        # prefix.queue.JOB.running
+        # prefix.queue.JOB.workers
+        # prefix.queue.waiting
+        # prefix.queue.running
+        # prefix.queue.workers
+        functions = self._getFunctionStats()
+        base_key = 'queue'
+        total_waiting = 0
+        total_running = 0
+        for name, values in functions.items():
+            (total, running, workers) = values
+            job_key = '.'.join([base_key, name])
+
+            key = '.'.join([job_key, 'waiting'])
+            self.statsd.gauge(key, total - running)
+            total_waiting += (total - running)
+
+            key = '.'.join([job_key, 'running'])
+            self.statsd.gauge(key, running)
+            total_running += running
+
+            key = '.'.join([job_key, 'workers'])
+            self.statsd.gauge(key, workers)
+
+        key = '.'.join([base_key, 'waiting'])
+        self.statsd.gauge(key, total_waiting)
+        key = '.'.join([base_key, 'running'])
+        self.statsd.gauge(key, total_running)
+
+        total_workers = 0
+        for connection in self.active_connections:
+            if connection.functions:
+                total_workers += 1
+        key = '.'.join([base_key, 'workers'])
+        self.statsd.gauge(key, total_workers)
+
     def _handleSubmitJob(self, packet, precedence):
         name = packet.getArgument(0)
         unique = packet.getArgument(1)
@@ -2317,6 +2387,7 @@ class Server(BaseClientServer):
             self.normal_queue.append(job)
         elif precedence == PRECEDENCE_LOW:
             self.low_queue.append(job)
+        self._updateStats()
         self.wakeConnections()
 
     def handleSubmitJob(self, packet):
@@ -2337,6 +2408,7 @@ class Server(BaseClientServer):
                         connection.related_jobs[job.handle] = job
                         job.worker_connection = connection
                     job.running = True
+                    self._updateStats()
                     return job
         return None
 
@@ -2399,6 +2471,7 @@ class Server(BaseClientServer):
             del self.jobs[handle]
             del job.client_connection.related_jobs[handle]
             del job.worker_connection.related_jobs[handle]
+            self._updateStats()
 
     def handleSetClientID(self, packet):
         name = packet.getArgument(0)

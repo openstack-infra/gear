@@ -34,7 +34,13 @@ class Server(object):
         self.gear_server_pid = None
 
     def parse_arguments(self):
-        parser = argparse.ArgumentParser(description='Gearman server.')
+        parser = argparse.ArgumentParser(description="""
+Gearman server.
+
+If the statsd python module is available, set STATSD_HOST,
+STATSD_PORT, and STATSD_PREFIX environment variables for statsd
+support.
+""")
         parser.add_argument('-d', dest='nodaemon', action='store_true',
                             help='do not run as a daemon')
         parser.add_argument('-p', dest='port', default=4730,
@@ -69,10 +75,16 @@ class Server(object):
 
     def main(self):
         self.setup_logging()
+        statsd_host = os.environ.get('STATSD_HOST')
+        statsd_port = int(os.environ.get('STATSD_PORT', 8125))
+        statsd_prefix = os.environ.get('STATSD_PREFIX')
         self.server = gear.Server(self.args.port,
                                   self.args.ssl_key,
                                   self.args.ssl_cert,
-                                  self.args.ssl_ca)
+                                  self.args.ssl_ca,
+                                  statsd_host,
+                                  statsd_port,
+                                  statsd_prefix)
         signal.pause()
 
 
