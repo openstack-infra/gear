@@ -108,11 +108,16 @@ class OptionReqTask(Task):
 
 
 class Connection(object):
-    """A Connection to a Gearman Server."""
+    """A Connection to a Gearman Server.
 
-    log = logging.getLogger("gear.Connection")
+    :arg str client_id: The client ID associated with this connection.
+        It will be appending to the name of the logger (e.g.,
+        gear.Connection.client_id).  Defaults to 'unknown'.
+    """
 
-    def __init__(self, host, port, ssl_key=None, ssl_cert=None, ssl_ca=None):
+    def __init__(self, host, port, ssl_key=None, ssl_cert=None, ssl_ca=None,
+                 client_id='unknown'):
+        self.log = logging.getLogger("gear.Connection.%s" % (client_id,))
         self.host = host
         self.port = port
         self.ssl_key = ssl_key
@@ -388,8 +393,6 @@ class AdminRequest(object):
         The administrative command.
     """
 
-    log = logging.getLogger("gear.AdminRequest")
-
     command = None
     arguments = []
     response = None
@@ -525,8 +528,6 @@ class Packet(object):
     :raises InvalidDataError: If the magic code is unknown.
     """
 
-    log = logging.getLogger("gear.Packet")
-
     def __init__(self, code, ptype, data, connection=None):
         if not isinstance(code, bytes) and not isinstance(code, bytearray):
             raise TypeError("code must be of type bytes or bytearray")
@@ -585,9 +586,10 @@ class Packet(object):
 
 
 class BaseClientServer(object):
-    log = logging.getLogger("gear.BaseClientServer")
-
-    def __init__(self):
+    def __init__(self, client_id='unknown'):
+        self.client_id = convert_to_bytes(client_id)
+        self.log = logging.getLogger("gear.BaseClientServer.%s" %
+                                     (self.client_id,))
         self.running = True
         self.active_connections = []
         self.inactive_connections = []
@@ -980,8 +982,9 @@ class BaseClientServer(object):
 
 
 class BaseClient(BaseClientServer):
-    def __init__(self):
-        super(BaseClient, self).__init__()
+    def __init__(self, client_id='unknown'):
+        super(BaseClient, self).__init__(client_id)
+        self.log = logging.getLogger("gear.BaseClient.%s" % (self.client_id,))
         # A lock to use when sending packets that set the state across
         # all known connections.  Note that it doesn't necessarily need
         # to be used for all broadcasts, only those that affect multi-
@@ -1022,7 +1025,8 @@ class BaseClient(BaseClientServer):
             for conn in self.active_connections + self.inactive_connections:
                 if conn.host == host and conn.port == port:
                     raise ConfigurationError("Host/port already specified")
-            conn = Connection(host, port, ssl_key, ssl_cert, ssl_ca)
+            conn = Connection(host, port, ssl_key, ssl_cert, ssl_ca,
+                              self.client_id)
             self.inactive_connections.append(conn)
             self.connections_condition.notifyAll()
         finally:
@@ -1143,12 +1147,16 @@ class Client(BaseClient):
     default event handlers to react to Gearman events.  Be sure to
     call the superclass event handlers so that they may perform
     job-related housekeeping.
+
+    :arg str client_id: The client ID to provide to Gearman.  It will
+        appear in administrative output and be appended to the name of
+        the logger (e.g., gear.Client.client_id).  Defaults to
+        'unknown'.
     """
 
-    log = logging.getLogger("gear.Client")
-
-    def __init__(self):
-        super(Client, self).__init__()
+    def __init__(self, client_id='unknown'):
+        super(Client, self).__init__(client_id)
+        self.log = logging.getLogger("gear.Client.%s" % (self.client_id,))
         self.options = set()
 
     def __repr__(self):
@@ -1506,19 +1514,27 @@ class FunctionRecord(object):
 class Worker(BaseClient):
     """A Gearman worker.
 
-    :arg str worker_id: The worker ID to provide to Gearman (will
-        appear in administrative command output).
+    :arg str client_id: The client ID to provide to Gearman.  It will
+        appear in administrative output and be appended to the name of
+        the logger (e.g., gear.Worker.client_id).
+    :arg str worker_id: The client ID to provide to Gearman.  It will
+        appear in administrative output and be appended to the name of
+        the logger (e.g., gear.Worker.client_id).  This parameter name
+        is deprecated, use client_id instead.
     """
 
-    log = logging.getLogger("gear.Worker")
-
-    def __init__(self, worker_id):
-        self.worker_id = convert_to_bytes(worker_id)
+    def __init__(self, client_id=None, worker_id=None):
+        if not client_id or worker_id:
+            raise Exception("A client_id must be provided")
+        if worker_id:
+            client_id = worker_id
+        super(Worker, self).__init__(client_id)
+        self.log = logging.getLogger("gear.Worker.%s" % (self.client_id,))
+        self.worker_id = client_id
         self.functions = {}
         self.job_lock = threading.Lock()
         self.waiting_for_jobs = 0
         self.job_queue = queue.Queue()
-        super(Worker, self).__init__()
 
     def __repr__(self):
         return '<gear.Worker 0x%x>' % id(self)
@@ -1622,7 +1638,7 @@ class Worker(BaseClient):
         self.broadcast_lock.acquire()
         try:
             # Called immediately after a successful (re-)connection
-            p = Packet(constants.REQ, constants.SET_CLIENT_ID, self.worker_id)
+            p = Packet(constants.REQ, constants.SET_CLIENT_ID, self.client_id)
             conn.sendPacket(p)
             super(Worker, self)._onConnect(conn)
             for f in self.functions.values():
@@ -1823,8 +1839,6 @@ class Worker(BaseClient):
 
 
 class BaseJob(object):
-    log = logging.getLogger("gear.Job")
-
     def __init__(self, name, arguments, unique=None, handle=None):
         self.name = convert_to_bytes(name)
         if (not isinstance(arguments, bytes) and
@@ -1892,8 +1906,6 @@ class Job(BaseJob):
         has been submitted to a Gearman server.
     """
 
-    log = logging.getLogger("gear.Job")
-
     def __init__(self, name, arguments, unique=None):
         super(Job, self).__init__(name, arguments, unique)
         self.data = []
@@ -1934,8 +1946,6 @@ class WorkerJob(BaseJob):
         The connection associated with the job.  Only set after the job
         has been submitted to a Gearman server.
     """
-
-    log = logging.getLogger("gear.WorkerJob")
 
     def __init__(self, handle, name, arguments, unique=None):
         super(WorkerJob, self).__init__(name, arguments, unique, handle)
@@ -2059,8 +2069,6 @@ class ServerJob(Job):
         has been assigned to a worker.
     """
 
-    log = logging.getLogger("gear.ServerJob")
-
     def __init__(self, handle, name, arguments, client_connection,
                  unique=None):
         super(ServerJob, self).__init__(name, arguments, unique)
@@ -2087,7 +2095,8 @@ class ServerAdminRequest(AdminRequest):
 class ServerConnection(Connection):
     """A Connection to a Gearman Client."""
 
-    def __init__(self, addr, conn, use_ssl):
+    def __init__(self, addr, conn, use_ssl, client_id):
+        self.log = logging.getLogger("gear.ServerConnection.%s" % (client_id,))
         self.host = addr[0]
         self.port = addr[1]
         self.conn = conn
@@ -2121,24 +2130,18 @@ class Server(BaseClientServer):
         (the default).
     :arg str statsd_port: statsd port (defaults to 8125).
     :arg str statsd_prefix: statsd key prefix.
+    :arg str client_id: The ID associated with this server.
+        It will be appending to the name of the logger (e.g.,
+        gear.Server.server_id).  Defaults to 'unknown'.
     """
 
     def __init__(self, port=4730, ssl_key=None, ssl_cert=None, ssl_ca=None,
-                 statsd_host=None, statsd_port=8125, statsd_prefix=None):
+                 statsd_host=None, statsd_port=8125, statsd_prefix=None,
+                 server_id='unknown'):
         self.port = port
         self.ssl_key = ssl_key
         self.ssl_cert = ssl_cert
         self.ssl_ca = ssl_ca
-        if statsd_host:
-            if not statsd:
-                self.log.error("Unable to import statsd module")
-                self.statsd = None
-            else:
-                self.statsd = statsd.StatsClient(statsd_host,
-                                                 statsd_port,
-                                                 statsd_prefix)
-        else:
-            self.statsd = None
         self.high_queue = []
         self.normal_queue = []
         self.low_queue = []
@@ -2177,7 +2180,19 @@ class Server(BaseClientServer):
         if port == 0:
             self.port = self.socket.getsockname()[1]
 
-        super(Server, self).__init__()
+        super(Server, self).__init__(server_id)
+        self.log = logging.getLogger("gear.Server.%s" % (self.client_id,))
+
+        if statsd_host:
+            if not statsd:
+                self.log.error("Unable to import statsd module")
+                self.statsd = None
+            else:
+                self.statsd = statsd.StatsClient(statsd_host,
+                                                 statsd_port,
+                                                 statsd_prefix)
+        else:
+            self.statsd = None
 
     def _doConnectLoop(self):
         while self.running:
@@ -2214,7 +2229,8 @@ class Server(BaseClientServer):
                                             ca_certs=self.ssl_ca,
                                             cert_reqs=ssl.CERT_REQUIRED,
                                             ssl_version=ssl.PROTOCOL_TLSv1)
-                    conn = ServerConnection(addr, c, self.use_ssl)
+                    conn = ServerConnection(addr, c, self.use_ssl,
+                                            self.client_id)
                     self.connections_condition.acquire()
                     self.active_connections.append(conn)
                     self.connections_condition.notifyAll()
