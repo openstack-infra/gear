@@ -2292,11 +2292,15 @@ class Server(BaseClientServer):
             # Total, running, workers
             functions[function] = [0, 0, 0]
         for job in self.jobs.values():
+            if job.name not in functions:
+                functions[job.name] = [0, 0, 0]
             functions[job.name][0] += 1
             if job.running:
                 functions[job.name][1] += 1
         for connection in self.active_connections:
             for function in connection.functions:
+                if function not in functions:
+                    functions[function] = [0, 0, 0]
                 functions[function][2] += 1
         return functions
 
