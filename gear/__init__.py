@@ -518,7 +518,8 @@ class Packet(object):
 
     :arg bytes code: The Gearman magic code (:py:data:`constants.REQ` or
         :py:data:`constants.RES`)
-    :arg bytes ptype: The packet type (one of the packet types in constasts).
+    :arg bytes ptype: The packet type (one of the packet types in
+        constants).
     :arg bytes data: The data portion of the packet.
     :arg Connection connection: The connection on which the packet
         was received (optional).
@@ -752,6 +753,7 @@ class BaseClientServer(object):
         """
 
         self.log.debug("Received packet %s" % packet)
+        start = time.time()
         if packet.ptype == constants.JOB_CREATED:
             self.handleJobCreated(packet)
         elif packet.ptype == constants.WORK_COMPLETE:
@@ -824,6 +826,22 @@ class BaseClientServer(object):
             self.handleOptionRes(packet)
         else:
             self.log.error("Received unknown packet: %s" % packet)
+        end = time.time()
+        self.reportTimingStats(packet.ptype, end - start)
+
+    def reportTimingStats(self, ptype, duration):
+        """Report processing times by packet type
+
+        This method is called by handlePacket to report how long
+        processing took for each packet.  The default implementation
+        does nothing.
+
+        :arg bytes ptype: The packet type (one of the packet types in
+            constants).
+        :arg float duration: The time (in seconds) it took to process
+            the packet.
+        """
+        pass
 
     def _defaultPacketHandler(self, packet):
         self.log.error("Received unhandled packet: %s" % packet)
@@ -2329,6 +2347,26 @@ class Server(BaseClientServer):
             if connection.state == 'SLEEP':
                 connection.changeState("AWAKE")
                 connection.sendPacket(p)
+
+    def reportTimingStats(self, ptype, duration):
+        """Report processing times by packet type
+
+        This method is called by handlePacket to report how long
+        processing took for each packet.  If statsd is configured,
+        timing and counts are reported with the key
+        "prefix.packet.NAME".
+
+        :arg bytes ptype: The packet type (one of the packet types in
+            constants).
+        :arg float duration: The time (in seconds) it took to process
+            the packet.
+        """
+        if not self.statsd:
+            return
+        ptype = constants.types.get(ptype, 'UNKNOWN')
+        key = 'packet.%s' % ptype
+        self.statsd.timing(key, int(duration * 1000))
+        self.statsd.incr(key)
 
     def _updateStats(self):
         if not self.statsd:
