@@ -2388,42 +2388,35 @@ class Server(BaseClientServer):
         if not self.statsd:
             return
 
-        # prefix.queue.JOB.waiting
-        # prefix.queue.JOB.running
-        # prefix.queue.JOB.workers
-        # prefix.queue.waiting
+        # prefix.queue.total
         # prefix.queue.running
-        # prefix.queue.workers
-        functions = self._getFunctionStats()
+        # prefix.queue.waiting
+        # prefix.workers
         base_key = 'queue'
-        total_waiting = 0
-        total_running = 0
-        for name, values in functions.items():
-            (total, running, workers) = values
-            job_key = '.'.join([base_key, name])
+        total = 0
+        running = 0
+        waiting = 0
+        for job in self.jobs.values():
+            total += 1
+            if job.running:
+                running += 1
+            else:
+                waiting += 1
 
-            key = '.'.join([job_key, 'waiting'])
-            self.statsd.gauge(key, total - running)
-            total_waiting += (total - running)
+        key = '.'.join([base_key, 'total'])
+        self.statsd.gauge(key, total)
 
-            key = '.'.join([job_key, 'running'])
-            self.statsd.gauge(key, running)
-            total_running += running
-
-            key = '.'.join([job_key, 'workers'])
-            self.statsd.gauge(key, workers)
+        key = '.'.join([base_key, 'running'])
+        self.statsd.gauge(key, running)
 
         key = '.'.join([base_key, 'waiting'])
-        self.statsd.gauge(key, total_waiting)
-        key = '.'.join([base_key, 'running'])
-        self.statsd.gauge(key, total_running)
+        self.statsd.gauge(key, waiting)
 
-        total_workers = 0
+        workers = 0
         for connection in self.active_connections:
             if connection.functions:
-                total_workers += 1
-        key = '.'.join([base_key, 'workers'])
-        self.statsd.gauge(key, total_workers)
+                workers += 1
+        self.statsd.gauge('workers', workers)
 
     def _handleSubmitJob(self, packet, precedence):
         name = packet.getArgument(0)
