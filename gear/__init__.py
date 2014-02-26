@@ -2220,6 +2220,7 @@ class Server(BaseClientServer):
                 self.connectLoop()
             except Exception:
                 self.log.exception("Exception in connect loop:")
+                time.sleep(1)
 
     def connectLoop(self):
         poll = select.poll()
