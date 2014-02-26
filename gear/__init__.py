@@ -997,6 +997,8 @@ class BaseClientServer(object):
             connection.disconnect()
         self.active_connections = []
         self.inactive_connections = []
+        os.close(self.wake_read)
+        os.close(self.wake_write)
 
 
 class BaseClient(BaseClientServer):
