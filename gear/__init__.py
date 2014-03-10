@@ -679,11 +679,15 @@ class BaseClientServer(object):
         # it and return ASAP and let the connection thread deal with it.
         self.log.debug("Marking %s as disconnected" % conn)
         self.connections_condition.acquire()
-        jobs = conn.related_jobs.values()
-        self.active_connections.remove(conn)
-        self.inactive_connections.append(conn)
-        self.connections_condition.notifyAll()
-        self.connections_condition.release()
+        try:
+            jobs = conn.related_jobs.values()
+            if conn in self.active_connections:
+                self.active_connections.remove(conn)
+            if conn not in self.inactive_connections:
+                self.inactive_connections.append(conn)
+        finally:
+            self.connections_condition.notifyAll()
+            self.connections_condition.release()
         for job in jobs:
             self.handleDisconnect(job)
 
@@ -984,9 +988,11 @@ class BaseClientServer(object):
         # are told to exit.
         self.running = False
         self.connections_condition.acquire()
-        self.connections_condition.notifyAll()
-        os.write(self.wake_write, b'1\n')
-        self.connections_condition.release()
+        try:
+            self.connections_condition.notifyAll()
+            os.write(self.wake_write, b'1\n')
+        finally:
+            self.connections_condition.release()
 
     def _cleanup(self):
         # The second part of the shutdown process where we wait for all
@@ -1733,31 +1739,33 @@ class Worker(BaseClient):
         """
 
         self.job_lock.acquire()
-        while True:
-            connections = self.active_connections[:]
-            now = time.time()
-            ok = True
-            for connection in connections:
-                if connection.state == "GRAB_WAIT":
-                    # Replies to GRAB_JOB should be fast, give up if we've
-                    # been waiting for more than 5 seconds.
-                    if now - connection.state_time > 5:
-                        self._lostConnection(connection)
-                    else:
-                        ok = False
-            if ok:
-                break
-            else:
-                self.job_lock.release()
-                time.sleep(0.1)
-                self.job_lock.acquire()
+        try:
+            while True:
+                connections = self.active_connections[:]
+                now = time.time()
+                ok = True
+                for connection in connections:
+                    if connection.state == "GRAB_WAIT":
+                        # Replies to GRAB_JOB should be fast, give up if we've
+                        # been waiting for more than 5 seconds.
+                        if now - connection.state_time > 5:
+                            self._lostConnection(connection)
+                        else:
+                            ok = False
+                if ok:
+                    break
+                else:
+                    self.job_lock.release()
+                    time.sleep(0.1)
+                    self.job_lock.acquire()
 
-        while self.waiting_for_jobs > 0:
-            self.waiting_for_jobs -= 1
-            self.job_queue.put(None)
+            while self.waiting_for_jobs > 0:
+                self.waiting_for_jobs -= 1
+                self.job_queue.put(None)
 
-        self._updateStateMachines()
-        self.job_lock.release()
+            self._updateStateMachines()
+        finally:
+            self.job_lock.release()
 
     def _shutdown(self):
         super(Worker, self)._shutdown()
@@ -2250,10 +2258,12 @@ class Server(BaseClientServer):
                     conn = ServerConnection(addr, c, self.use_ssl,
                                             self.client_id)
                     self.connections_condition.acquire()
-                    self.active_connections.append(conn)
-                    self.connections_condition.notifyAll()
-                    os.write(self.wake_write, b'1\n')
-                    self.connections_condition.release()
+                    try:
+                        self.active_connections.append(conn)
+                        self.connections_condition.notifyAll()
+                        os.write(self.wake_write, b'1\n')
+                    finally:
+                        self.connections_condition.release()
 
     def _shutdown(self):
         super(Server, self)._shutdown()
@@ -2267,10 +2277,13 @@ class Server(BaseClientServer):
         # Called as soon as a connection is detected as faulty.
         self.log.debug("Marking %s as disconnected" % conn)
         self.connections_condition.acquire()
-        jobs = conn.related_jobs.values()
-        self.active_connections.remove(conn)
-        self.connections_condition.notifyAll()
-        self.connections_condition.release()
+        try:
+            jobs = conn.related_jobs.values()
+            if conn in self.active_connections:
+                self.active_connections.remove(conn)
+        finally:
+            self.connections_condition.notifyAll()
+            self.connections_condition.release()
         for job in jobs:
             if job.worker_connection == conn:
                 # the worker disconnected, alert the client
