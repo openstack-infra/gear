@@ -1673,7 +1673,7 @@ class Worker(BaseClient):
                     p = Packet(constants.REQ, constants.CAN_DO_TIMEOUT, data)
                 else:
                     p = Packet(constants.REQ, constants.CAN_DO, f.name)
-            conn.sendPacket(p)
+                conn.sendPacket(p)
             conn.changeState("IDLE")
         finally:
             self.broadcast_lock.release()
