@@ -2275,6 +2275,8 @@ class Server(BaseClientServer):
     def _cleanup(self):
         super(Server, self)._cleanup()
         self.socket.close()
+        os.close(self.connect_wake_read)
+        os.close(self.connect_wake_write)
 
     def _lostConnection(self, conn):
         # Called as soon as a connection is detected as faulty.
