@@ -158,10 +158,96 @@ Server Usage
 ------------
 .. program-output:: geard --help
 
+The syntax of the optional ACL file consists of a number of sections
+identified by the SSL certificate Common Name Subject, and the
+arguments to the :py:class:`ACLEntry` constructor as key-value pairs::
+
+  [<subject>]
+  register=<regex>
+  invoke=<regex>
+  grant=<boolean>
+
+For example::
+
+  [my_worker]
+  register=.*
+
+  [my_client]
+  invoke=.*
+
+  [my_node_manager]
+  grant=True
 
 Server Objects
 ^^^^^^^^^^^^^^
 .. autoclass:: gear.Server
+  :members:
+  :inherited-members:
+
+
+Access Control
+--------------
+
+The gear server supports authorization via access control lists.  When
+an :py:class:`ACL` object is supplied to the server (or a file on the
+command line), gear changes from the normal Gearman mode of
+allow-by-default to deny-by-default and only clients with ACL entries
+will be able to perform actions such as registering functions or
+submitting jobs.  Authorization is based on the SSL certificate Common
+Name Subject associated with the connection.  An :py:class:`ACL`
+object may be modified programatically at run-time.
+
+The administrative protocol supports modifying ACLs with the following
+commands:
+
+**acl list**
+  List the current acls::
+
+    acl list
+    client	register=None	invoke=.*	grant=True
+    worker	register=.*	invoke=None	grant=True
+    .
+
+**acl grant <verb> <subject> <pattern>**
+  Grant the `<verb>` action for functions matching `<pattern>` to
+  `<subject>`.  Verbs can be one of ``register``, ``invoke``, or
+  ``grant``.  This requires the current connection have the grant
+  permission.  Example::
+
+    acl grant register worker .*
+    OK
+
+**acl revoke <verb> <subject>**
+  Revoke the `<verb>` action from `<subject>`.  Verbs can be one of
+  ``register``, ``invoke``, ``grant``, or ``all`` to indicate all
+  permissions for the subject should be revoked.  This requires the
+  grant permission, except that a subject may always revoke its own
+  permissions.  Example::
+
+    acl revoke register worker
+    OK
+
+**acl self-revoke <verb>**
+  Revoke the `<verb>` action from connections associted with the
+  current certificate subject.  Verbs can be one of ``register``,
+  ``invoke``, ``grant``, or ``all`` to indicate all permissions for
+  the subject should be revoked.  This is similar to ``acl revoke``
+  but is a convenience method so that a subject does not need to know
+  its own common name.  A subject always has permission to revoke its
+  own permissions.  Example::
+
+    acl self-revoke register
+    OK
+
+ACL Objects
+^^^^^^^^^^^
+.. autoclass:: gear.ACL
+  :members:
+  :inherited-members:
+
+ACLEntry Objects
+^^^^^^^^^^^^^^^^
+.. autoclass:: gear.ACLEntry
   :members:
   :inherited-members:
 

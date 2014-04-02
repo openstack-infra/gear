@@ -14,6 +14,7 @@
 # under the License.
 
 import argparse
+import ConfigParser
 import daemon
 import extras
 import gear
@@ -56,6 +57,8 @@ support.
                             help='path to SSL public certificate')
         parser.add_argument('--ssl-key', dest='ssl_key', metavar='PATH',
                             help='path to SSL private key')
+        parser.add_argument('--acl', dest='acl', metavar='PATH',
+                            help='path to ACL file')
         parser.add_argument('--version', dest='version', action='store_true',
                             help='show version')
         self.args = parser.parse_args()
@@ -78,13 +81,34 @@ support.
         statsd_host = os.environ.get('STATSD_HOST')
         statsd_port = int(os.environ.get('STATSD_PORT', 8125))
         statsd_prefix = os.environ.get('STATSD_PREFIX')
+        acl = None
+        if self.args.acl:
+            aclf = ConfigParser.RawConfigParser()
+            aclf.read(self.args.acl)
+            acl = gear.ACL()
+            for section in aclf.sections():
+                if aclf.has_option(section, 'register'):
+                    register = aclf.get(section, 'register')
+                else:
+                    register = None
+                if aclf.has_option(section, 'invoke'):
+                    invoke = aclf.get(section, 'invoke')
+                else:
+                    invoke = None
+                if aclf.has_option(section, 'grant'):
+                    grant = aclf.getboolean(section, 'grant')
+                else:
+                    grant = None
+                entry = gear.ACLEntry(section, register, invoke, grant)
+                acl.add(entry)
         self.server = gear.Server(self.args.port,
                                   self.args.ssl_key,
                                   self.args.ssl_cert,
                                   self.args.ssl_ca,
                                   statsd_host,
                                   statsd_port,
-                                  statsd_prefix)
+                                  statsd_prefix,
+                                  acl=acl)
         signal.pause()
 
 

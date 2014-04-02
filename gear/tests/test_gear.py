@@ -69,6 +69,62 @@ class TestClient(tests.BaseTestCase):
         self.assertTrue(job.known)
         self.assertFalse(job.running)
 
+    def test_ACL(self):
+        acl = gear.ACL()
+        acl.add(gear.ACLEntry('worker', register='foo.*'))
+        acl.add(gear.ACLEntry('client', invoke='foo.*'))
+        acl.add(gear.ACLEntry('manager', grant=True))
+        self.assertEqual(len(acl.getEntries()), 3)
+
+        self.assertTrue(acl.canRegister('worker', 'foo-bar'))
+        self.assertTrue(acl.canRegister('worker', 'foo'))
+        self.assertFalse(acl.canRegister('worker', 'bar-foo'))
+        self.assertFalse(acl.canRegister('worker', 'bar'))
+        self.assertFalse(acl.canInvoke('worker', 'foo'))
+        self.assertFalse(acl.canGrant('worker'))
+
+        self.assertTrue(acl.canInvoke('client', 'foo-bar'))
+        self.assertTrue(acl.canInvoke('client', 'foo'))
+        self.assertFalse(acl.canInvoke('client', 'bar-foo'))
+        self.assertFalse(acl.canInvoke('client', 'bar'))
+        self.assertFalse(acl.canRegister('client', 'foo'))
+        self.assertFalse(acl.canGrant('client'))
+
+        self.assertFalse(acl.canInvoke('manager', 'bar'))
+        self.assertFalse(acl.canRegister('manager', 'foo'))
+        self.assertTrue(acl.canGrant('manager'))
+
+        acl.remove('worker')
+        acl.remove('client')
+        acl.remove('manager')
+
+        self.assertFalse(acl.canRegister('worker', 'foo'))
+        self.assertFalse(acl.canInvoke('client', 'foo'))
+        self.assertFalse(acl.canGrant('manager'))
+
+        self.assertEqual(len(acl.getEntries()), 0)
+
+    def test_ACL_register(self):
+        acl = gear.ACL()
+        acl.grantRegister('worker', 'bar.*')
+        self.assertTrue(acl.canRegister('worker', 'bar'))
+        acl.revokeRegister('worker')
+        self.assertFalse(acl.canRegister('worker', 'bar'))
+
+    def test_ACL_invoke(self):
+        acl = gear.ACL()
+        acl.grantInvoke('client', 'bar.*')
+        self.assertTrue(acl.canInvoke('client', 'bar'))
+        acl.revokeInvoke('client')
+        self.assertFalse(acl.canInvoke('client', 'bar'))
+
+    def test_ACL_grant(self):
+        acl = gear.ACL()
+        acl.grantGrant('manager')
+        self.assertTrue(acl.canGrant('manager'))
+        acl.revokeGrant('manager')
+        self.assertFalse(acl.canGrant('manager'))
+
 
 def load_tests(loader, in_tests, pattern):
     return testscenarios.load_tests_apply_scenarios(loader, in_tests, pattern)
