@@ -1407,7 +1407,7 @@ class Client(BaseClient):
         job.handle = packet.data
         packet.connection.related_jobs[job.handle] = job
         task.setComplete()
-        self.log.debug("Job created; handle: %s" % job.handle)
+        self.log.debug("Job created; %s" % job)
         return job
 
     def handleWorkComplete(self, packet):
@@ -1429,8 +1429,8 @@ class Client(BaseClient):
         job.complete = True
         job.failure = False
         del packet.connection.related_jobs[job.handle]
-        self.log.debug("Job complete; handle: %s data: %s" %
-                       (job.handle, job.data))
+        self.log.debug("Job complete; %s data: %s" %
+                       (job, job.data))
         return job
 
     def handleWorkFail(self, packet):
@@ -1449,7 +1449,7 @@ class Client(BaseClient):
         job.complete = True
         job.failure = True
         del packet.connection.related_jobs[job.handle]
-        self.log.debug("Job failed; handle: %s" % job.handle)
+        self.log.debug("Job failed; %s" % job)
         return job
 
     def handleWorkException(self, packet):
@@ -1469,8 +1469,8 @@ class Client(BaseClient):
         job.complete = True
         job.failure = True
         del packet.connection.related_jobs[job.handle]
-        self.log.debug("Job exception; handle: %s data: %s" %
-                       (job.handle, job.exception))
+        self.log.debug("Job exception; %s exception: %s" %
+                       (job, job.exception))
         return job
 
     def handleWorkData(self, packet):
@@ -1487,8 +1487,8 @@ class Client(BaseClient):
         data = packet.getArgument(1, True)
         if data:
             job.data.append(data)
-        self.log.debug("Job data; handle: %s data: %s" %
-                       (job.handle, job.data))
+        self.log.debug("Job data; job: %s data: %s" %
+                       (job, job.data))
         return job
 
     def handleWorkWarning(self, packet):
@@ -1506,8 +1506,8 @@ class Client(BaseClient):
         if data:
             job.data.append(data)
         job.warning = True
-        self.log.debug("Job warning; handle: %s data: %s" %
-                       (job.handle, job.data))
+        self.log.debug("Job warning; %s data: %s" %
+                       (job, job.data))
         return job
 
     def handleWorkStatus(self, packet):
@@ -1528,8 +1528,8 @@ class Client(BaseClient):
                                      float(job.denominator))
         except Exception:
             job.fraction_complete = None
-        self.log.debug("Job status; handle: %s complete: %s/%s" %
-                       (job.handle, job.numerator, job.denominator))
+        self.log.debug("Job status; %s complete: %s/%s" %
+                       (job, job.numerator, job.denominator))
         return job
 
     def handleStatusRes(self, packet):
