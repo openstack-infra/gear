@@ -57,6 +57,14 @@ An example of a Gearman worker::
         job = worker.getJob()
         job.sendWorkComplete(job.arguments[::-1])
 
+Server Example
+--------------
+
+You can run the Gearman server by executing the `geard` command.  For help
+execute `geard --help`
+
+.. program-output:: geard --help
+
 SSL Connections
 ---------------
 
@@ -156,7 +164,6 @@ AdminRequest Objects
 
 Server Usage
 ------------
-.. program-output:: geard --help
 
 The syntax of the optional ACL file consists of a number of sections
 identified by the SSL certificate Common Name Subject, and the
