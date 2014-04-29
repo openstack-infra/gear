@@ -1,4 +1,4 @@
-# Copyright 2013 OpenStack Foundation
+# Copyright 2013-2014 OpenStack Foundation
 #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may
 # not use this file except in compliance with the License. You may obtain
@@ -23,6 +23,7 @@ import time
 import uuid as uuid_module
 
 from gear import constants
+from gear.acl import ACLError, ACLEntry, ACL  # noqa
 
 try:
     import Queue as queue
@@ -1292,10 +1293,14 @@ class Client(BaseClient):
             else:
                 raise ConfigurationError("Invalid precedence value")
         packet = Packet(constants.REQ, cmd, data)
+        attempted_connections = set()
         while True:
+            if attempted_connections == set(self.active_connections):
+                break
             conn = self.getConnection()
             task = SubmitJobTask(job)
             conn.pending_tasks.append(task)
+            attempted_connections.add(conn)
             try:
                 self.sendPacket(packet, conn)
             except Exception:
@@ -2132,6 +2137,12 @@ class ServerConnection(Connection):
         self.client_id = None
         self.functions = set()
         self.related_jobs = {}
+        self.ssl_subject = None
+        if self.use_ssl:
+            for x in conn.getpeercert()['subject']:
+                if x[0][0] == 'commonName':
+                    self.ssl_subject = x[0][1]
+            self.log.debug("SSL subject: %s" % self.ssl_subject)
         self.changeState("INIT")
 
     def _getAdminRequest(self):
@@ -2161,11 +2172,13 @@ class Server(BaseClientServer):
     :arg str client_id: The ID associated with this server.
         It will be appending to the name of the logger (e.g.,
         gear.Server.server_id).  Defaults to 'unknown'.
+    :arg ACL acl: An :py:class:`ACL` object if the server should apply
+        access control rules to its connections.
     """
 
     def __init__(self, port=4730, ssl_key=None, ssl_cert=None, ssl_ca=None,
                  statsd_host=None, statsd_port=8125, statsd_prefix=None,
-                 server_id='unknown'):
+                 server_id='unknown', acl=None):
         self.port = port
         self.ssl_key = ssl_key
         self.ssl_cert = ssl_cert
@@ -2176,6 +2189,7 @@ class Server(BaseClientServer):
         self.jobs = {}
         self.functions = set()
         self.max_handle = 0
+        self.acl = acl
         self.connect_wake_read, self.connect_wake_write = os.pipe()
 
         self.use_ssl = False
@@ -2322,6 +2336,29 @@ class Server(BaseClientServer):
             self.handleStatus(request)
         elif request.command.startswith(b'workers'):
             self.handleWorkers(request)
+        elif request.command.startswith(b'acl list'):
+            self.handleACLList(request)
+        elif request.command.startswith(b'acl grant'):
+            self.handleACLGrant(request)
+        elif request.command.startswith(b'acl revoke'):
+            self.handleACLRevoke(request)
+        elif request.command.startswith(b'acl self-revoke'):
+            self.handleACLSelfRevoke(request)
+
+    def _cancelJob(self, request, job, queue):
+        if self.acl:
+            if not self.acl.canInvoke(request.connection.ssl_subject,
+                                      job.name):
+                self.log.info("Rejecting cancel job from %s for %s "
+                              "due to ACL" %
+                              (request.connection.ssl_subject, job.name))
+                request.connection.sendRaw(b'ERR PERMISSION_DENIED\n')
+                return
+        queue.remove(job)
+        del self.jobs[job.handle]
+        self._updateStats()
+        request.connection.sendRaw(b'OK\n')
+        return
 
     def handleCancelJob(self, request):
         words = request.command.split()
@@ -2331,12 +2368,110 @@ class Server(BaseClientServer):
             for queue in [self.high_queue, self.normal_queue, self.low_queue]:
                 for job in queue:
                     if handle == job.handle:
-                        queue.remove(job)
-                        del self.jobs[handle]
-                        self._updateStats()
-                        request.connection.sendRaw(b'OK\n')
-                        return
+                        return self._cancelJob(request, job, queue)
         request.connection.sendRaw(b'ERR UNKNOWN_JOB\n')
+
+    def handleACLList(self, request):
+        if self.acl is None:
+            request.connection.sendRaw(b'ERR ACL_DISABLED\n')
+            return
+        for entry in self.acl.getEntries():
+            l = "%s\tregister=%s\tinvoke=%s\tgrant=%s\n" % (
+                entry.subject, entry.register, entry.invoke, entry.grant)
+            request.connection.sendRaw(l.encode('utf8'))
+        request.connection.sendRaw(b'.\n')
+
+    def handleACLGrant(self, request):
+        # acl grant register worker .*
+        words = request.command.split(None, 4)
+        verb = words[2]
+        subject = words[3]
+
+        if self.acl is None:
+            request.connection.sendRaw(b'ERR ACL_DISABLED\n')
+            return
+        if not self.acl.canGrant(request.connection.ssl_subject):
+            request.connection.sendRaw(b'ERR PERMISSION_DENIED\n')
+            return
+        try:
+            if verb == 'invoke':
+                self.acl.grantInvoke(subject, words[4])
+            elif verb == 'register':
+                self.acl.grantRegister(subject, words[4])
+            elif verb == 'grant':
+                self.acl.grantGrant(subject)
+            else:
+                request.connection.sendRaw(b'ERR UNKNOWN_ACL_VERB\n')
+                return
+        except ACLError, e:
+            self.log.info("Error in grant command: %s" % (e.message,))
+            request.connection.sendRaw(b'ERR UNABLE %s\n' % (e.message,))
+            return
+        request.connection.sendRaw(b'OK\n')
+
+    def handleACLRevoke(self, request):
+        # acl revoke register worker
+        words = request.command.split()
+        verb = words[2]
+        subject = words[3]
+
+        if self.acl is None:
+            request.connection.sendRaw(b'ERR ACL_DISABLED\n')
+            return
+        if subject != request.connection.ssl_subject:
+            if not self.acl.canGrant(request.connection.ssl_subject):
+                request.connection.sendRaw(b'ERR PERMISSION_DENIED\n')
+                return
+        try:
+            if verb == 'invoke':
+                self.acl.revokeInvoke(subject)
+            elif verb == 'register':
+                self.acl.revokeRegister(subject)
+            elif verb == 'grant':
+                self.acl.revokeGrant(subject)
+            elif verb == 'all':
+                try:
+                    self.acl.remove(subject)
+                except ACLError:
+                    pass
+            else:
+                request.connection.sendRaw(b'ERR UNKNOWN_ACL_VERB\n')
+                return
+        except ACLError, e:
+            self.log.info("Error in revoke command: %s" % (e.message,))
+            request.connection.sendRaw(b'ERR UNABLE %s\n' % (e.message,))
+            return
+        request.connection.sendRaw(b'OK\n')
+
+    def handleACLSelfRevoke(self, request):
+        # acl self-revoke register
+        words = request.command.split()
+        verb = words[2]
+
+        if self.acl is None:
+            request.connection.sendRaw(b'ERR ACL_DISABLED\n')
+            return
+        subject = request.connection.ssl_subject
+        try:
+            if verb == 'invoke':
+                self.acl.revokeInvoke(subject)
+            elif verb == 'register':
+                self.acl.revokeRegister(subject)
+            elif verb == 'grant':
+                self.acl.revokeGrant(subject)
+            elif verb == 'all':
+                try:
+                    self.acl.remove(subject)
+                except ACLError:
+                    pass
+            else:
+                request.connection.sendRaw(b'ERR UNKNOWN_ACL_VERB\n')
+                return
+        except ACLError, e:
+            self.log.info("Error in self-revoke command: %s" % (e.message,))
+            request.connection.sendRaw(b'ERR UNABLE %s\n' % (e.message,))
+            return
+        request.connection.sendRaw(b'OK\n')
 
     def _getFunctionStats(self):
         functions = {}
@@ -2442,6 +2577,14 @@ class Server(BaseClientServer):
         if not unique:
             unique = None
         arguments = packet.getArgument(2, True)
+        if self.acl:
+            if not self.acl.canInvoke(packet.connection.ssl_subject, name):
+                self.log.info("Rejecting SUBMIT_JOB from %s for %s "
+                              "due to ACL" %
+                              (packet.connection.ssl_subject, name))
+                self.sendError(packet.connection, 0,
+                               'Permission denied by ACL')
+                return
         self.max_handle += 1
         handle = ('H:%s:%s' % (packet.connection.host,
                                self.max_handle)).encode('utf8')
@@ -2546,8 +2689,22 @@ class Server(BaseClientServer):
         name = packet.getArgument(0)
         packet.connection.client_id = name
 
+    def sendError(self, connection, code, text):
+        data = (str(code).encode('utf8') + b'\x00' +
+                str(text).encode('utf8') + b'\x00')
+        p = Packet(constants.RES, constants.ERROR, data)
+        connection.sendPacket(p)
+
     def handleCanDo(self, packet):
         name = packet.getArgument(0)
+        if self.acl:
+            if not self.acl.canRegister(packet.connection.ssl_subject, name):
+                self.log.info("Ignoring CAN_DO from %s for %s due to ACL" %
+                              (packet.connection.ssl_subject, name))
+                # CAN_DO normally does not merit a response so it is
+                # not clear that it is appropriate to send an ERROR
+                # response at this point.
+                return
         self.log.debug("Adding function %s to %s" % (name, packet.connection))
         packet.connection.functions.add(name)
         self.functions.add(name)
