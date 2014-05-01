@@ -2312,11 +2312,42 @@ class Server(BaseClientServer):
                 except Exception:
                     self.log.exception("Sending WORK_FAIL to client after "
                                        "worker disconnect failed:")
-            del job.client_connection.related_jobs[job.handle]
-            if job.worker_connection:
-                del job.worker_connection.related_jobs[job.handle]
-            del self.jobs[job.handle]
+            self._removeJob(job)
         self._updateStats()
+
+    def _removeJob(self, job, dequeue=True):
+        # dequeue is tri-state: True, False, or a specific queue
+        try:
+            del job.client_connection.related_jobs[job.handle]
+        except KeyError:
+            pass
+        if job.worker_connection:
+            try:
+                del job.worker_connection.related_jobs[job.handle]
+            except KeyError:
+                pass
+        try:
+            del self.jobs[job.handle]
+        except KeyError:
+            pass
+        if dequeue is True:
+            # Search all queues for the job
+            try:
+                self.high_queue.remove(job)
+            except ValueError:
+                pass
+            try:
+                self.normal_queue.remove(job)
+            except ValueError:
+                pass
+            try:
+                self.low_queue.remove(job)
+            except ValueError:
+                pass
+        elif dequeue is not False:
+            # A specific queue was supplied
+            dequeue.remove(job)
+        # If dequeue is false, no need to remove from any queue
 
     def getQueue(self):
         """Returns a copy of all internal queues in a flattened form.
@@ -2354,8 +2385,7 @@ class Server(BaseClientServer):
                               (request.connection.ssl_subject, job.name))
                 request.connection.sendRaw(b'ERR PERMISSION_DENIED\n')
                 return
-        queue.remove(job)
-        del self.jobs[job.handle]
+        self._removeJob(job, dequeue=queue)
         self._updateStats()
         request.connection.sendRaw(b'OK\n')
         return
@@ -2680,9 +2710,7 @@ class Server(BaseClientServer):
         packet.code = constants.RES
         job.client_connection.sendPacket(packet)
         if finished:
-            del self.jobs[handle]
-            del job.client_connection.related_jobs[handle]
-            del job.worker_connection.related_jobs[handle]
+            self._removeJob(job, dequeue=False)
             self._updateStats()
 
     def handleSetClientID(self, packet):
