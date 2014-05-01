@@ -12,6 +12,7 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
+import errno
 import logging
 import os
 import select
@@ -192,7 +193,7 @@ class Connection(object):
             self.log.debug("Error connecting to %s port %s" % (
                 self.host, self.port))
             raise ConnectionError("Unable to open socket")
-        self.log.debug("Connected to %s port %s" % (self.host, self.port))
+        self.log.info("Connected to %s port %s" % (self.host, self.port))
         self.conn = s
         self.connected = True
         self.connect_time = time.time()
@@ -208,7 +209,7 @@ class Connection(object):
             except Exception:
                 pass
 
-        self.log.debug("Disconnected from %s port %s" % (self.host, self.port))
+        self.log.info("Disconnected from %s port %s" % (self.host, self.port))
         self._init()
 
     def reconnect(self):
@@ -240,7 +241,7 @@ class Connection(object):
 
         :arg Packet packet: The :py:class:`Packet` to send.
         """
-        self.log.debug("Sending packet: %s" % packet)
+        self.log.info("Sending packet to %s: %s" % (self, packet))
         self.sendRaw(packet.toBinary())
 
     def _getAdminRequest(self):
@@ -544,7 +545,59 @@ class Packet(object):
 
     def __repr__(self):
         ptype = constants.types.get(self.ptype, 'UNKNOWN')
-        return '<gear.Packet 0x%x type: %s>' % (id(self), ptype)
+        try:
+            extra = self._formatExtraData()
+        except Exception:
+            extra = ''
+        return '<gear.Packet 0x%x type: %s%s>' % (id(self), ptype, extra)
+
+    def _formatExtraData(self):
+        if self.ptype in [constants.JOB_CREATED,
+                          constants.JOB_ASSIGN,
+                          constants.GET_STATUS,
+                          constants.STATUS_RES,
+                          constants.WORK_STATUS,
+                          constants.WORK_COMPLETE,
+                          constants.WORK_FAIL,
+                          constants.WORK_EXCEPTION,
+                          constants.WORK_DATA,
+                          constants.WORK_WARNING]:
+            return ' handle: %s' % self.getArgument(0)
+
+        if self.ptype == constants.JOB_ASSIGN_UNIQ:
+            print self.data
+            return (' handle: %s function: %s unique: %s' %
+                    (self.getArgument(0),
+                     self.getArgument(1),
+                     self.getArgument(2)))
+
+        if self.ptype in [constants.SUBMIT_JOB,
+                          constants.SUBMIT_JOB_BG,
+                          constants.SUBMIT_JOB_HIGH,
+                          constants.SUBMIT_JOB_HIGH_BG,
+                          constants.SUBMIT_JOB_LOW,
+                          constants.SUBMIT_JOB_LOW_BG,
+                          constants.SUBMIT_JOB_SCHED,
+                          constants.SUBMIT_JOB_EPOCH]:
+            return ' function: %s unique: %s' % (self.getArgument(0),
+                                                 self.getArgument(1))
+
+        if self.ptype in [constants.CAN_DO,
+                          constants.CANT_DO,
+                          constants.CAN_DO_TIMEOUT]:
+            return ' function: %s' % (self.getArgument(0),)
+
+        if self.ptype == constants.SET_CLIENT_ID:
+            return ' id: %s' % (self.getArgument(0),)
+
+        if self.ptype in [constants.OPTION_REQ,
+                          constants.OPTION_RES]:
+            return ' option: %s' % (self.getArgument(0),)
+
+        if self.ptype == constants.ERROR:
+            return ' code: %s message: %s' % (self.getArgument(0),
+                                              self.getArgument(1))
+        return ''
 
     def toBinary(self):
         """Return a Gearman wire protocol binary representation of the packet.
@@ -588,10 +641,14 @@ class Packet(object):
 
 
 class BaseClientServer(object):
-    def __init__(self, client_id='unknown'):
-        self.client_id = convert_to_bytes(client_id)
-        self.log = logging.getLogger("gear.BaseClientServer.%s" %
-                                     (self.client_id,))
+    def __init__(self, client_id=None):
+        if client_id:
+            self.client_id = convert_to_bytes(client_id)
+            self.log = logging.getLogger("gear.BaseClientServer.%s" %
+                                         (self.client_id,))
+        else:
+            self.client_id = None
+            self.log = logging.getLogger("gear.BaseClientServer")
         self.running = True
         self.active_connections = []
         self.inactive_connections = []
@@ -703,6 +760,11 @@ class BaseClientServer(object):
             self.connections_condition.release()
             try:
                 self._pollLoop()
+            except socket.error, e:
+                if e.errno == errno.ECONNRESET:
+                    self.log.debug("Connection reset by peer")
+                    # This will get logged later at info level as
+                    # "Marking ... as disconnected"
             except Exception:
                 self.log.exception("Exception in poll loop:")
 
@@ -759,7 +821,8 @@ class BaseClientServer(object):
         :arg Packet packet: The :py:class:`Packet` that was received.
         """
 
-        self.log.debug("Received packet %s" % packet)
+        self.log.info("Received packet from %s: %s" % (packet.connection,
+                                                       packet))
         start = time.time()
         if packet.ptype == constants.JOB_CREATED:
             self.handleJobCreated(packet)
@@ -970,7 +1033,7 @@ class BaseClientServer(object):
             initiated the received response.
         """
 
-        self.log.debug("Received admin data %s" % request)
+        self.log.info("Received admin data %s" % request)
         request.setComplete()
 
     def shutdown(self):
@@ -2129,7 +2192,11 @@ class ServerConnection(Connection):
     """A Connection to a Gearman Client."""
 
     def __init__(self, addr, conn, use_ssl, client_id):
-        self.log = logging.getLogger("gear.ServerConnection.%s" % (client_id,))
+        if client_id:
+            self.log = logging.getLogger("gear.ServerConnection.%s" %
+                                         (client_id,))
+        else:
+            self.log = logging.getLogger("gear.ServerConnection")
         self.host = addr[0]
         self.port = addr[1]
         self.conn = conn
@@ -2149,12 +2216,8 @@ class ServerConnection(Connection):
         return ServerAdminRequest(self)
 
     def __repr__(self):
-        if self.client_id:
-            name = self.client_id
-        else:
-            name = '0x%x' % id(self)
-        return '<gear.Connection name: %s host: %s port: %s>' % (
-            name, self.host, self.port)
+        return '<gear.ServerConnection 0x%x name: %s host: %s port: %s>' % (
+            id(self), self.client_id, self.host, self.port)
 
 
 class Server(BaseClientServer):
@@ -2171,14 +2234,14 @@ class Server(BaseClientServer):
     :arg str statsd_prefix: statsd key prefix.
     :arg str client_id: The ID associated with this server.
         It will be appending to the name of the logger (e.g.,
-        gear.Server.server_id).  Defaults to 'unknown'.
+        gear.Server.server_id).  Defaults to None (unused).
     :arg ACL acl: An :py:class:`ACL` object if the server should apply
         access control rules to its connections.
     """
 
     def __init__(self, port=4730, ssl_key=None, ssl_cert=None, ssl_ca=None,
                  statsd_host=None, statsd_port=8125, statsd_prefix=None,
-                 server_id='unknown', acl=None):
+                 server_id=None, acl=None):
         self.port = port
         self.ssl_key = ssl_key
         self.ssl_cert = ssl_cert
@@ -2223,7 +2286,10 @@ class Server(BaseClientServer):
             self.port = self.socket.getsockname()[1]
 
         super(Server, self).__init__(server_id)
-        self.log = logging.getLogger("gear.Server.%s" % (self.client_id,))
+        if server_id:
+            self.log = logging.getLogger("gear.Server.%s" % (self.client_id,))
+        else:
+            self.log = logging.getLogger("gear.Server")
 
         if statsd_host:
             if not statsd:
@@ -2264,7 +2330,6 @@ class Server(BaseClientServer):
                 if event & select.POLLIN:
                     self.log.debug("Accepting new connection")
                     c, addr = self.socket.accept()
-                    self.log.debug("Accepted new connection")
                     if self.use_ssl:
                         c = ssl.wrap_socket(c, server_side=True,
                                             keyfile=self.ssl_key,
@@ -2274,6 +2339,7 @@ class Server(BaseClientServer):
                                             ssl_version=ssl.PROTOCOL_TLSv1)
                     conn = ServerConnection(addr, c, self.use_ssl,
                                             self.client_id)
+                    self.log.info("Accepted connection %s" % (conn,))
                     self.connections_condition.acquire()
                     try:
                         self.active_connections.append(conn)
@@ -2294,7 +2360,7 @@ class Server(BaseClientServer):
 
     def _lostConnection(self, conn):
         # Called as soon as a connection is detected as faulty.
-        self.log.debug("Marking %s as disconnected" % conn)
+        self.log.info("Marking %s as disconnected" % conn)
         self.connections_condition.acquire()
         try:
             jobs = conn.related_jobs.values()
