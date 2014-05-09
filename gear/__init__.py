@@ -565,7 +565,6 @@ class Packet(object):
             return ' handle: %s' % self.getArgument(0)
 
         if self.ptype == constants.JOB_ASSIGN_UNIQ:
-            print self.data
             return (' handle: %s function: %s unique: %s' %
                     (self.getArgument(0),
                      self.getArgument(1),
