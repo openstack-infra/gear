@@ -2427,6 +2427,8 @@ class Server(BaseClientServer):
         return ret
 
     def handleAdminRequest(self, request):
+        self.log.info("Received admin request %s" % (request,))
+
         if request.command.startswith(b'cancel job'):
             self.handleCancelJob(request)
         elif request.command.startswith(b'status'):
@@ -2441,6 +2443,8 @@ class Server(BaseClientServer):
             self.handleACLRevoke(request)
         elif request.command.startswith(b'acl self-revoke'):
             self.handleACLSelfRevoke(request)
+
+        self.log.debug("Finished handling admin request %s" % (request,))
 
     def _cancelJob(self, request, job, queue):
         if self.acl:
