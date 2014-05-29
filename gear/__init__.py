@@ -760,7 +760,7 @@ class BaseClientServer(object):
             self.connections_condition.release()
             try:
                 self._pollLoop()
-            except socket.error, e:
+            except socket.error as e:
                 if e.errno == errno.ECONNRESET:
                     self.log.debug("Connection reset by peer")
                     # This will get logged later at info level as
@@ -2503,7 +2503,7 @@ class Server(BaseClientServer):
             else:
                 request.connection.sendRaw(b'ERR UNKNOWN_ACL_VERB\n')
                 return
-        except ACLError, e:
+        except ACLError as e:
             self.log.info("Error in grant command: %s" % (e.message,))
             request.connection.sendRaw(b'ERR UNABLE %s\n' % (e.message,))
             return
@@ -2537,7 +2537,7 @@ class Server(BaseClientServer):
             else:
                 request.connection.sendRaw(b'ERR UNKNOWN_ACL_VERB\n')
                 return
-        except ACLError, e:
+        except ACLError as e:
             self.log.info("Error in revoke command: %s" % (e.message,))
             request.connection.sendRaw(b'ERR UNABLE %s\n' % (e.message,))
             return
@@ -2567,7 +2567,7 @@ class Server(BaseClientServer):
             else:
                 request.connection.sendRaw(b'ERR UNKNOWN_ACL_VERB\n')
                 return
-        except ACLError, e:
+        except ACLError as e:
             self.log.info("Error in self-revoke command: %s" % (e.message,))
             request.connection.sendRaw(b'ERR UNABLE %s\n' % (e.message,))
             return
