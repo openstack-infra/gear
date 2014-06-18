@@ -95,7 +95,7 @@ class ACLEntry(object):
         if register:
             try:
                 self._register = re.compile(register)
-            except re.error, e:
+            except re.error as e:
                 raise ACLError('Regular expression error: %s' % (e.message,))
         else:
             self._register = None
@@ -110,7 +110,7 @@ class ACLEntry(object):
         if invoke:
             try:
                 self._invoke = re.compile(invoke)
-            except re.error, e:
+            except re.error as e:
                 raise ACLError('Regular expression error: %s' % (e.message,))
         else:
             self._invoke = None
