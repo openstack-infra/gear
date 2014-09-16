@@ -165,6 +165,57 @@ AdminRequest Objects
 Server Usage
 ------------
 
+Logging
+^^^^^^^
+
+To enable Gearman server logging you can setup a log configuration file and
+pass it to `geard` (i.e. geard --log-config=logging.config)
+
+Example logging.config::
+
+  [loggers]
+  keys=root,gear
+
+  [handlers]
+  keys=console,debug,info
+
+  [formatters]
+  keys=simple
+
+  [logger_root]
+  level=WARNING
+  handlers=console
+
+  [logger_gear]
+  level=INFO
+  handlers=debug,info
+  qualname=gear
+
+  [handler_console]
+  level=WARNING
+  class=StreamHandler
+  formatter=simple
+  args=(sys.stdout,)
+
+  [handler_debug]
+  level=DEBUG
+  class=logging.handlers.TimedRotatingFileHandler
+  formatter=simple
+  args=('/var/log/gear/debug.log', 'midnight', 1, 30,)
+
+  [handler_info]
+  level=INFO
+  class=logging.handlers.TimedRotatingFileHandler
+  formatter=simple
+  args=('/var/log/gear/info.log', 'midnight', 1, 30,)
+
+  [formatter_simple]
+  format=%(asctime)s %(levelname)s %(name)s: %(message)s
+  datefmt=
+
+ACL
+^^^
+
 The syntax of the optional ACL file consists of a number of sections
 identified by the SSL certificate Common Name Subject, and the
 arguments to the :py:class:`ACLEntry` constructor as key-value pairs::
