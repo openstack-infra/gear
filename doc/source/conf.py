@@ -214,8 +214,10 @@ latex_documents = [
 # One entry per manual page. List of tuples
 # (source start file, name, description, authors, manual section).
 man_pages = [
-    ('index', 'gear', u'Gear Documentation',
-     [u'OpenStack Foundation'], 1)
+    ('index', 'gear', u'Gear Full Documentation',
+     [u'OpenStack Foundation'], 1),
+    ('geard', 'geard', u'async pure python Gearman daemon',
+     [u'OpenStack Foundation'], 8),
 ]
 
 # If true, show URL addresses after external links.

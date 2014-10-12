@@ -63,7 +63,7 @@ Server Example
 You can run the Gearman server by executing the `geard` command.  For help
 execute `geard --help`
 
-.. program-output:: geard --help
+.. include:: geard.rst
 
 SSL Connections
 ---------------
