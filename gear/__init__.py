@@ -1791,6 +1791,14 @@ class Worker(BaseClient):
 
             if not job:
                 self._updateStateMachines()
+
+            # That variable get cleared during _shutdown(), before the
+            # stopWaitingForJobs() is called. The check has to happen with the
+            # self.job_lock held, otherwise there would be a window for race
+            # conditions between manipulation of "running" and
+            # "waiting_for_jobs".
+            if not self.running:
+                raise InterruptedError()
         finally:
             self.job_lock.release()
 
@@ -1837,7 +1845,16 @@ class Worker(BaseClient):
             self.job_lock.release()
 
     def _shutdown(self):
-        super(Worker, self)._shutdown()
+        self.job_lock.acquire()
+        try:
+            # The upstream _shutdown() will clear the "running" bool. Because
+            # that is a variable which is used for proper synchronization of
+            # the exit within getJob() which might be about to be called from a
+            # separate thread, it's important to call it with a proper lock
+            # being held.
+            super(Worker, self)._shutdown()
+        finally:
+            self.job_lock.release()
         self.stopWaitingForJobs()
 
     def handleNoop(self, packet):
