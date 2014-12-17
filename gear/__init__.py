@@ -2718,8 +2718,8 @@ class Server(BaseClientServer):
                         queue.remove(job)
                         connection.related_jobs[job.handle] = job
                         job.worker_connection = connection
-                    job.running = True
-                    self._updateStats()
+                        job.running = True
+                        self._updateStats()
                     return job
         return None
 
