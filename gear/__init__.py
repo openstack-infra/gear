@@ -315,9 +315,9 @@ class Connection(object):
                         packet = b''
                         return admin_request
                 else:
-                    if len(packet) == 12:
+                    if code is None and len(packet) >= 12:
                         code, ptype, datalen = struct.unpack('!4sii',
-                                                             packet)
+                                                             packet[:12])
                     if len(packet) == datalen + 12:
                         p = Packet(code, ptype, packet[12:],
                                    connection=self)
