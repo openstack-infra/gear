@@ -573,6 +573,18 @@ class Packet(object):
             extra = ''
         return '<gear.Packet 0x%x type: %s%s>' % (id(self), ptype, extra)
 
+    def __eq__(self, other):
+        if not isinstance(other, Packet):
+            return False
+        if (self.code == other.code and
+            self.ptype == other.ptype and
+            self.data == other.data):
+            return True
+        return False
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
     def _formatExtraData(self):
         if self.ptype in [constants.JOB_CREATED,
                           constants.JOB_ASSIGN,

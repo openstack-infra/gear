@@ -13,7 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import socket
+
 import testscenarios
+import testtools
 
 import gear
 from gear import tests
@@ -37,6 +40,61 @@ class ConnectionTestCase(tests.BaseTestCase):
     def test_params(self):
         self.assertTrue(repr(self.conn).endswith(
             'host: %s port: %s>' % (self.host, self.port)))
+
+
+class TestServerConnection(tests.BaseTestCase):
+
+    def setUp(self):
+        super(TestServerConnection, self).setUp()
+        self.socket = tests.FakeSocket()
+        self.conn = gear.ServerConnection('127.0.0.1', self.socket,
+                                          False, 'test')
+
+    def assertEndOfData(self):
+        # End of data
+        with testtools.ExpectedException(
+            socket.error, ".* Resource temporarily unavailable"):
+            self.conn.readPacket()
+        # Still end of data
+        with testtools.ExpectedException(
+            socket.error, ".* Resource temporarily unavailable"):
+            self.conn.readPacket()
+
+    def test_readPacket_large(self):
+        p1 = gear.Packet(
+            gear.constants.REQ,
+            gear.constants.WORK_COMPLETE,
+            b'H:127.0.0.1:11\x00' + (b'x' * 10000)
+        )
+        self.socket._set_data([p1.toBinary()])
+        r1 = self.conn.readPacket()
+        self.assertEquals(r1, p1)
+        self.assertEndOfData()
+
+    def test_readPacket_multi_pdu(self):
+        p1 = gear.Packet(
+            gear.constants.REQ,
+            gear.constants.WORK_COMPLETE,
+            b'H:127.0.0.1:11\x00' + (b'x' * 2600)
+        )
+        p2 = gear.Packet(
+            gear.constants.REQ,
+            gear.constants.GRAB_JOB_UNIQ,
+            b''
+        )
+        self.socket._set_data([p1.toBinary()[:1448],
+                               p1.toBinary()[1448:] + p2.toBinary()])
+        # First half of first packet
+        with testtools.ExpectedException(
+            socket.error, ".* Resource temporarily unavailable"):
+            self.conn.readPacket()
+        # Second half of first packet
+        r1 = self.conn.readPacket()
+        self.assertEquals(r1, p1)
+        # Second packet
+        r2 = self.conn.readPacket()
+        self.assertEquals(r2, p2)
+        self.assertEndOfData()
 
 
 class TestClient(tests.BaseTestCase):

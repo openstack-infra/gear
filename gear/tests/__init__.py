@@ -16,7 +16,9 @@
 
 """Common utilities used in testing"""
 
+import errno
 import os
+import socket
 
 import fixtures
 import testresources
@@ -49,3 +51,40 @@ class BaseTestCase(testtools.TestCase, testresources.ResourcedTestCase):
 
         self.useFixture(fixtures.FakeLogger())
         self.useFixture(fixtures.NestedTempfile())
+
+
+def raise_eagain():
+    e = socket.error("socket error [Errno 11] "
+                     "Resource temporarily unavailable")
+    e.errno = errno.EAGAIN
+    raise e
+
+
+class FakeSocket(object):
+    def __init__(self):
+        self.packets = []
+        self.packet_num = 0
+        self.packet_pos = 0
+        self.blocking = 1
+
+    def _set_data(self, data):
+        self.packets = data
+
+    def setblocking(self, blocking):
+        self.blocking = blocking
+
+    def recv(self, count):
+        if self.packet_num + 1 > len(self.packets):
+            if self.blocking:
+                raise Exception("End of data reached in blocking mode")
+            raise_eagain()
+        packet = self.packets[self.packet_num]
+        if self.packet_pos + 1 > len(packet):
+            self.packet_num += 1
+            self.packet_pos = 0
+            if not self.blocking:
+                raise_eagain()
+        start = self.packet_pos
+        end = min(start + count, len(packet))
+        self.packet_pos = end
+        return bytes(packet[start:end])
