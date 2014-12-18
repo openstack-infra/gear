@@ -42,6 +42,53 @@ class ConnectionTestCase(tests.BaseTestCase):
             'host: %s port: %s>' % (self.host, self.port)))
 
 
+class TestConnection(tests.BaseTestCase):
+
+    def setUp(self):
+        super(TestConnection, self).setUp()
+        self.patch(socket, 'socket', tests.FakeSocket)
+        self.conn = gear.Connection('127.0.0.1', 4730)
+        self.conn.connect()
+        self.socket = self.conn.conn
+
+    def assertEndOfData(self):
+        # End of data
+        with testtools.ExpectedException(tests.FakeSocketEOF):
+            self.conn.readPacket()
+
+    def test_readPacket_large(self):
+        p1 = gear.Packet(
+            gear.constants.REQ,
+            gear.constants.WORK_COMPLETE,
+            b'H:127.0.0.1:11\x00' + (b'x' * 10000)
+        )
+        self.socket._set_data([p1.toBinary()])
+        r1 = self.conn.readPacket()
+        self.assertEquals(r1, p1)
+        self.assertEndOfData()
+
+    def test_readPacket_multi_pdu(self):
+        p1 = gear.Packet(
+            gear.constants.REQ,
+            gear.constants.WORK_COMPLETE,
+            b'H:127.0.0.1:11\x00' + (b'x' * 2600)
+        )
+        p2 = gear.Packet(
+            gear.constants.REQ,
+            gear.constants.GRAB_JOB_UNIQ,
+            b''
+        )
+        self.socket._set_data([p1.toBinary()[:1448],
+                               p1.toBinary()[1448:] + p2.toBinary()])
+        # First packet
+        r1 = self.conn.readPacket()
+        self.assertEquals(r1, p1)
+        # Second packet
+        r2 = self.conn.readPacket()
+        self.assertEquals(r2, p2)
+        self.assertEndOfData()
+
+
 class TestServerConnection(tests.BaseTestCase):
 
     def setUp(self):

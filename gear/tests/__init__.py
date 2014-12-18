@@ -60,8 +60,12 @@ def raise_eagain():
     raise e
 
 
+class FakeSocketEOF(Exception):
+    pass
+
+
 class FakeSocket(object):
-    def __init__(self):
+    def __init__(self, af=None, socktype=None, proto=None):
         self.packets = []
         self.packet_num = 0
         self.packet_pos = 0
@@ -70,20 +74,27 @@ class FakeSocket(object):
     def _set_data(self, data):
         self.packets = data
 
+    def connect(self, sa):
+        pass
+
     def setblocking(self, blocking):
         self.blocking = blocking
 
     def recv(self, count):
-        if self.packet_num + 1 > len(self.packets):
-            if self.blocking:
-                raise Exception("End of data reached in blocking mode")
-            raise_eagain()
-        packet = self.packets[self.packet_num]
-        if self.packet_pos + 1 > len(packet):
-            self.packet_num += 1
-            self.packet_pos = 0
-            if not self.blocking:
-                raise_eagain()
+        while True:
+            if self.packet_num + 1 > len(self.packets):
+                if not self.blocking:
+                    raise_eagain()
+                raise FakeSocketEOF(
+                    "End of data reached in blocking mode")
+            packet = self.packets[self.packet_num]
+            if self.packet_pos + 1 > len(packet):
+                self.packet_num += 1
+                self.packet_pos = 0
+                if not self.blocking:
+                    raise_eagain()
+                continue
+            break
         start = self.packet_pos
         end = min(start + count, len(packet))
         self.packet_pos = end
