@@ -56,6 +56,38 @@ class TestConnection(tests.BaseTestCase):
         with testtools.ExpectedException(tests.FakeSocketEOF):
             self.conn.readPacket()
 
+    def test_readPacket_admin(self):
+        response = b'test\t0\t0\t1\n.\n'
+        req = gear.StatusAdminRequest()
+        self.socket._set_data([response])
+        self.conn.admin_requests.append(req)
+        r1 = self.conn.readPacket()
+        self.assertEqual(r1.response, response)
+        self.assertEndOfData()
+
+    def test_readPacket_admin_mix(self):
+        p1 = gear.Packet(
+            gear.constants.REQ,
+            gear.constants.WORK_COMPLETE,
+            b'H:127.0.0.1:11\x00' + (b'x' * 5000)
+        )
+        response = b'test\t0\t0\t1\n.\n'
+        p2 = gear.Packet(
+            gear.constants.REQ,
+            gear.constants.WORK_COMPLETE,
+            b'H:127.0.0.1:11\x00' + (b'x' * 5000)
+        )
+        req = gear.StatusAdminRequest()
+        self.conn.admin_requests.append(req)
+        self.socket._set_data([p1.toBinary() + response + p2.toBinary()])
+        r1 = self.conn.readPacket()
+        self.assertEquals(r1, p1)
+        ra = self.conn.readPacket()
+        self.assertEqual(ra.response, response)
+        r2 = self.conn.readPacket()
+        self.assertEquals(r2, p2)
+        self.assertEndOfData()
+
     def test_readPacket_large(self):
         p1 = gear.Packet(
             gear.constants.REQ,
@@ -106,6 +138,34 @@ class TestServerConnection(tests.BaseTestCase):
         with testtools.ExpectedException(
             socket.error, ".* Resource temporarily unavailable"):
             self.conn.readPacket()
+
+    def test_readPacket_admin(self):
+        command = b'status\n'
+        self.socket._set_data([command])
+        r1 = self.conn.readPacket()
+        self.assertEqual(r1.command, command.strip())
+        self.assertEndOfData()
+
+    def test_readPacket_admin_mix(self):
+        p1 = gear.Packet(
+            gear.constants.REQ,
+            gear.constants.WORK_COMPLETE,
+            b'H:127.0.0.1:11\x00' + (b'x' * 5000)
+        )
+        command = b'status\n'
+        p2 = gear.Packet(
+            gear.constants.REQ,
+            gear.constants.WORK_COMPLETE,
+            b'H:127.0.0.1:11\x00' + (b'x' * 5000)
+        )
+        self.socket._set_data([p1.toBinary() + command + p2.toBinary()])
+        r1 = self.conn.readPacket()
+        self.assertEquals(r1, p1)
+        ra = self.conn.readPacket()
+        self.assertEqual(ra.command, command.strip())
+        r2 = self.conn.readPacket()
+        self.assertEquals(r2, p2)
+        self.assertEndOfData()
 
     def test_readPacket_large(self):
         p1 = gear.Packet(
