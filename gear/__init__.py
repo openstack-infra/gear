@@ -2859,12 +2859,19 @@ class Server(BaseClientServer):
                                        .encode('utf8'))
         request.connection.sendRaw(b'.\n')
 
-    def wakeConnections(self):
+    def wakeConnection(self, connection):
+        p = Packet(constants.RES, constants.NOOP, b'')
+        if connection.state == 'SLEEP':
+            connection.changeState("AWAKE")
+            connection.sendPacket(p)
+
+    def wakeConnections(self, job=None):
         p = Packet(constants.RES, constants.NOOP, b'')
         for connection in self.active_connections:
             if connection.state == 'SLEEP':
-                connection.changeState("AWAKE")
-                connection.sendPacket(p)
+                if job and job.name in connection.functions:
+                    connection.changeState("AWAKE")
+                    connection.sendPacket(p)
 
     def reportTimingStats(self, ptype, duration):
         """Report processing times by packet type
@@ -2949,7 +2956,7 @@ class Server(BaseClientServer):
         elif precedence == PRECEDENCE_LOW:
             self.low_queue.append(job)
         self._updateStats()
-        self.wakeConnections()
+        self.wakeConnections(job)
 
     def handleSubmitJob(self, packet):
         return self._handleSubmitJob(packet, PRECEDENCE_NORMAL)
@@ -2995,7 +3002,7 @@ class Server(BaseClientServer):
     def handlePreSleep(self, packet):
         packet.connection.changeState("SLEEP")
         if self.getJobForConnection(packet.connection, peek=True):
-            self.wakeConnections()
+            self.wakeConnection(packet.connection)
 
     def handleWorkComplete(self, packet):
         self.handlePassthrough(packet, True)
