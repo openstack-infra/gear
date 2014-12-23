@@ -77,6 +77,10 @@ class DisconnectError(Exception):
     pass
 
 
+class RetryIOError(Exception):
+    pass
+
+
 def convert_to_bytes(data):
     try:
         data = data.encode('utf8')
@@ -267,15 +271,6 @@ class Connection(object):
                 else:
                     raise
             break
-
-        bytes_read = len(buff)
-        if self.use_ssl and (bytes_read < bytes_to_read):
-            remaining = self.conn.pending()
-            while remaining and (bytes_read < bytes_to_read):
-                buff += self.conn.recv(bytes_to_read - bytes_read)
-                remaining = self.conn.pending()
-                bytes_read = len(buff)
-
         return buff
 
     def _putAdminRequest(self, req):
@@ -307,10 +302,9 @@ class Connection(object):
                             return None
                         raw_bytes += segment
                         need_bytes = False
-                except socket.error as e:
-                    if e.errno == errno.EAGAIN:
-                        if admin_request:
-                            self._putAdminRequest(admin_request)
+                except RetryIOError:
+                    if admin_request:
+                        self._putAdminRequest(admin_request)
                     raise
                 if admin is None:
                     if raw_bytes[0] == b'\x00':
@@ -2277,6 +2271,23 @@ class NonBlockingConnection(Connection):
         if self.connected and self.conn:
             self.conn.setblocking(0)
 
+    def _readRawBytes(self, bytes_to_read):
+        try:
+            buff = self.conn.recv(bytes_to_read)
+        except ssl.SSLError as e:
+            if e.errno == ssl.SSL_ERROR_WANT_READ:
+                raise RetryIOError()
+            elif e.errno == ssl.SSL_ERROR_WANT_WRITE:
+                raise RetryIOError()
+            raise
+        except socket.error as e:
+            if e.errno == errno.EAGAIN:
+                # Read operation would block, we're done until
+                # epoll flags this connection again
+                raise RetryIOError()
+            raise
+        return buff
+
     def sendPacket(self, packet):
         """Append a packet to this connection's send queue.  The Client or
         Server must manage actually sending the data.
@@ -2308,16 +2319,16 @@ class NonBlockingConnection(Connection):
                 r = self.conn.send(data)
             except ssl.SSLError as e:
                 if e.errno == ssl.SSL_ERROR_WANT_READ:
-                    pass
+                    raise RetryIOError()
                 elif e.errno == ssl.SSL_ERROR_WANT_WRITE:
-                    pass
+                    raise RetryIOError()
                 else:
                     raise
             except socket.error as e:
                 if e.errno == errno.EAGAIN:
                     self.log.debug("Write operation on %s would block"
                                    % self)
-                    return
+                    raise RetryIOError()
                 raise
             finally:
                 data = data[r:]
@@ -2514,12 +2525,10 @@ class Server(BaseClientServer):
             self.log.debug("Processing input on %s" % conn)
             try:
                 p = conn.readPacket()
-            except socket.error as e:
-                if e.errno == errno.EAGAIN:
-                    # Read operation would block, we're done until
-                    # epoll flags this connection again
-                    return
-                raise
+            except RetryIOError:
+                # Read operation would block, we're done until
+                # epoll flags this connection again
+                return
             if p:
                 if isinstance(p, Packet):
                     self.handlePacket(p)
@@ -2544,9 +2553,8 @@ class Server(BaseClientServer):
                 self.log.debug("Received error event on %s: %s" % (
                     conn, event))
                 raise DisconnectError()
-            if event & select.POLLIN:
+            if event & (select.POLLIN | select.POLLOUT):
                 self.readFromConnection(conn)
-            if event & select.POLLOUT:
                 self.writeToConnection(conn)
         except socket.error as e:
             if e.errno == errno.ECONNRESET:
