@@ -1,4 +1,4 @@
 pbr>=0.6,!=0.7,<1.0
 argparse
 extras
-python-daemon
+python-daemon<2.0
