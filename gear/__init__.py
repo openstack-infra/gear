@@ -2385,6 +2385,8 @@ class Server(BaseClientServer):
         gear.Server.server_id).  Defaults to None (unused).
     :arg ACL acl: An :py:class:`ACL` object if the server should apply
         access control rules to its connections.
+    :arg str host: Host name or IPv4/IPv6 address to bind to.  Defaults
+        to "whatever getaddrinfo() returns", which might be IPv4-only.
     """
 
     edge_bitmask = select.EPOLLET
@@ -2394,7 +2396,7 @@ class Server(BaseClientServer):
 
     def __init__(self, port=4730, ssl_key=None, ssl_cert=None, ssl_ca=None,
                  statsd_host=None, statsd_port=8125, statsd_prefix=None,
-                 server_id=None, acl=None):
+                 server_id=None, acl=None, host=None):
         self.port = port
         self.ssl_key = ssl_key
         self.ssl_cert = ssl_cert
@@ -2415,7 +2417,7 @@ class Server(BaseClientServer):
         if all([self.ssl_key, self.ssl_cert, self.ssl_ca]):
             self.use_ssl = True
 
-        for res in socket.getaddrinfo(None, self.port, socket.AF_UNSPEC,
+        for res in socket.getaddrinfo(host, self.port, socket.AF_UNSPEC,
                                       socket.SOCK_STREAM, 0,
                                       socket.AI_PASSIVE):
             af, socktype, proto, canonname, sa = res
