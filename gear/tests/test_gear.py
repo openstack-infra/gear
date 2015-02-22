@@ -211,7 +211,7 @@ class TestClient(tests.BaseTestCase):
             gear.constants.STATUS_RES,
             b'H:127.0.0.1:11\x001\x001\x00\x00'
         )
-        packet.getJob = lambda: gear.Job("", "")
+        packet.getJob = lambda: gear.Job(b"", b"")
         job = client.handleStatusRes(packet)
 
         self.assertTrue(job.known)
@@ -225,7 +225,7 @@ class TestClient(tests.BaseTestCase):
             gear.constants.STATUS_RES,
             b'H:127.0.0.1:11\x001\x000\x00\x00'
         )
-        packet.getJob = lambda: gear.Job("", "")
+        packet.getJob = lambda: gear.Job(b"", b"")
         job = client.handleStatusRes(packet)
 
         self.assertTrue(job.known)

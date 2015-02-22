@@ -166,8 +166,8 @@ class ACL(object):
 
         :returns: A list of :py:class:`ACLEntry` objects.
         """
-        items = self.subjects.items()
-        items.sort(lambda a, b: cmp(a[0], b[0]))
+        items = list(self.subjects.items())
+        items.sort(key=lambda a: a[0])
         return [x[1] for x in items]
 
     def canRegister(self, subject, name):

@@ -99,9 +99,9 @@ class TestFunctional(tests.BaseTestCase):
             cert.sign(key, 'sha1')
 
         open(os.path.join(self.tmp_root, '%s.crt' % cn), 'w').write(
-            crypto.dump_certificate(crypto.FILETYPE_PEM, cert))
+            crypto.dump_certificate(crypto.FILETYPE_PEM, cert).decode('utf-8'))
         open(os.path.join(self.tmp_root, '%s.key' % cn), 'w').write(
-            crypto.dump_privatekey(crypto.FILETYPE_PEM, key))
+            crypto.dump_privatekey(crypto.FILETYPE_PEM, key).decode('utf-8'))
 
         return (subject, key)
 
@@ -109,21 +109,21 @@ class TestFunctional(tests.BaseTestCase):
         self.worker.registerFunction('test')
 
         for jobcount in range(2):
-            job = gear.Job('test', 'testdata')
+            job = gear.Job(b'test', b'testdata')
             self.client.submitJob(job)
             self.assertNotEqual(job.handle, None)
 
             workerjob = self.worker.getJob()
             self.assertEqual(workerjob.handle, job.handle)
-            self.assertEqual(workerjob.arguments, 'testdata')
-            workerjob.sendWorkData('workdata')
+            self.assertEqual(workerjob.arguments, b'testdata')
+            workerjob.sendWorkData(b'workdata')
             workerjob.sendWorkComplete()
 
             for count in iterate_timeout(30, "job completion"):
                 if job.complete:
                     break
             self.assertTrue(job.complete)
-            self.assertEqual(job.data, ['workdata'])
+            self.assertEqual(job.data, [b'workdata'])
 
 
 def load_tests(loader, in_tests, pattern):

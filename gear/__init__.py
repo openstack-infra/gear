@@ -307,7 +307,7 @@ class Connection(object):
                         self._putAdminRequest(admin_request)
                     raise
                 if admin is None:
-                    if raw_bytes[0] == b'\x00':
+                    if raw_bytes[0:1] == b'\x00':
                         admin = False
                     else:
                         admin = True
@@ -1607,8 +1607,8 @@ class Client(BaseClient):
         """
 
         job = packet.getJob()
-        job.known = (packet.getArgument(1) == '1')
-        job.running = (packet.getArgument(2) == '1')
+        job.known = (packet.getArgument(1) == b'1')
+        job.running = (packet.getArgument(2) == b'1')
         job.numerator = packet.getArgument(3)
         job.denominator = packet.getArgument(4)
 
