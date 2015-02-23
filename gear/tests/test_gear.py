@@ -131,12 +131,10 @@ class TestServerConnection(tests.BaseTestCase):
 
     def assertEndOfData(self):
         # End of data
-        with testtools.ExpectedException(
-            socket.error, ".* Resource temporarily unavailable"):
+        with testtools.ExpectedException(gear.RetryIOError):
             self.conn.readPacket()
         # Still end of data
-        with testtools.ExpectedException(
-            socket.error, ".* Resource temporarily unavailable"):
+        with testtools.ExpectedException(gear.RetryIOError):
             self.conn.readPacket()
 
     def test_readPacket_admin(self):
@@ -192,8 +190,7 @@ class TestServerConnection(tests.BaseTestCase):
         self.socket._set_data([p1.toBinary()[:1448],
                                p1.toBinary()[1448:] + p2.toBinary()])
         # First half of first packet
-        with testtools.ExpectedException(
-            socket.error, ".* Resource temporarily unavailable"):
+        with testtools.ExpectedException(gear.RetryIOError):
             self.conn.readPacket()
         # Second half of first packet
         r1 = self.conn.readPacket()
