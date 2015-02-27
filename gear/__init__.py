@@ -1780,6 +1780,14 @@ class Worker(BaseClient):
         """
         self.job_lock.acquire()
         try:
+            # self.running gets cleared during _shutdown(), before the
+            # stopWaitingForJobs() is called.  This check has to
+            # happen with the job_lock held, otherwise there would be
+            # a window for race conditions between manipulation of
+            # "running" and "waiting_for_jobs".
+            if not self.running:
+                raise InterruptedError()
+
             self.waiting_for_jobs += 1
             self.log.debug("Get job; number of threads waiting for jobs: %s" %
                            self.waiting_for_jobs)
@@ -1792,13 +1800,6 @@ class Worker(BaseClient):
             if not job:
                 self._updateStateMachines()
 
-            # That variable get cleared during _shutdown(), before the
-            # stopWaitingForJobs() is called. The check has to happen with the
-            # self.job_lock held, otherwise there would be a window for race
-            # conditions between manipulation of "running" and
-            # "waiting_for_jobs".
-            if not self.running:
-                raise InterruptedError()
         finally:
             self.job_lock.release()
 
