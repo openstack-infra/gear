@@ -2950,7 +2950,8 @@ class Server(BaseClientServer):
         p = Packet(constants.RES, constants.NOOP, b'')
         for connection in self.active_connections:
             if connection.state == 'SLEEP':
-                if job and job.name in connection.functions:
+                if ((job and job.name in connection.functions) or
+                    (job is None)):
                     connection.changeState("AWAKE")
                     connection.sendPacket(p)
 
