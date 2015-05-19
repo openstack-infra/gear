@@ -1186,15 +1186,28 @@ class BaseClient(BaseClientServer):
         finally:
             self.connections_condition.release()
 
-    def waitForServer(self):
+    def _checkTimeout(self, start_time, timeout):
+        if time.time() - start_time > timeout:
+            raise TimeoutError()
+
+    def waitForServer(self, timeout=None):
         """Wait for at least one server to be connected.
 
         Block until at least one gearman server is connected.
+
+        :arg numeric timeout: Number of seconds to wait for a connection.
+            If None, wait forever (default: no timeout).
+        :raises TimeoutError: If the timeout is reached before any server
+            connects.
         """
+
         connected = False
+        start_time = time.time()
         while self.running:
             self.connections_condition.acquire()
             while self.running and not self.active_connections:
+                if timeout is not None:
+                    self._checkTimeout(start_time, timeout)
                 self.log.debug("Waiting for at least one active connection")
                 self.connections_condition.wait(timeout=1)
             if self.active_connections:
