@@ -1196,7 +1196,7 @@ class BaseClient(BaseClientServer):
             self.connections_condition.acquire()
             while self.running and not self.active_connections:
                 self.log.debug("Waiting for at least one active connection")
-                self.connections_condition.wait()
+                self.connections_condition.wait(timeout=1)
             if self.active_connections:
                 self.log.debug("Active connection found")
                 connected = True
