@@ -2346,8 +2346,8 @@ class NonBlockingConnection(Connection):
                 if e.errno == errno.EAGAIN:
                     self.log.debug("Write operation on %s would block"
                                    % self)
-                    raise RetryIOError()
-                raise
+                else:
+                    raise
             finally:
                 data = data[r:]
                 if data:
