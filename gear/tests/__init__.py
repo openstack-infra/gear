@@ -17,6 +17,7 @@
 """Common utilities used in testing"""
 
 import errno
+import logging
 import os
 import socket
 
@@ -49,7 +50,10 @@ class BaseTestCase(testtools.TestCase, testresources.ResourcedTestCase):
             stderr = self.useFixture(fixtures.StringStream('stderr')).stream
             self.useFixture(fixtures.MonkeyPatch('sys.stderr', stderr))
 
-        self.useFixture(fixtures.FakeLogger())
+        self.useFixture(fixtures.FakeLogger(
+            level=logging.DEBUG,
+            format='%(asctime)s %(name)-32s '
+            '%(levelname)-8s %(message)s'))
         self.useFixture(fixtures.NestedTempfile())
 
 
