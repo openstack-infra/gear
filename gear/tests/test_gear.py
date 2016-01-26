@@ -287,6 +287,11 @@ class TestClient(tests.BaseTestCase):
         acl.revokeGrant('manager')
         self.assertFalse(acl.canGrant('manager'))
 
+    def test_double_shutdown(self):
+        client = gear.Client()
+        client.shutdown()
+        client.shutdown()
+
 
 def load_tests(loader, in_tests, pattern):
     return testscenarios.load_tests_apply_scenarios(loader, in_tests, pattern)

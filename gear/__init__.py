@@ -1105,11 +1105,15 @@ class BaseClientServer(object):
 
         The object may no longer be used after shutdown is called.
         """
-        self.log.debug("Beginning shutdown")
-        self._shutdown()
-        self.log.debug("Beginning cleanup")
-        self._cleanup()
-        self.log.debug("Finished shutdown")
+        if self.running:
+            self.log.debug("Beginning shutdown")
+            self._shutdown()
+            self.log.debug("Beginning cleanup")
+            self._cleanup()
+            self.log.debug("Finished shutdown")
+        else:
+            self.log.warning("Shutdown called when not currently running. "
+                             "Ignoring.")
 
     def _shutdown(self):
         # The first part of the shutdown process where all threads
