@@ -13,7 +13,6 @@
 # under the License.
 
 import argparse
-import ConfigParser
 import daemon
 import extras
 import gear
@@ -23,6 +22,9 @@ import os
 import pbr.version
 import signal
 import sys
+
+from six.moves import configparser as ConfigParser
+
 
 pid_file_module = extras.try_imports(['daemon.pidlockfile', 'daemon.pidfile'])
 
