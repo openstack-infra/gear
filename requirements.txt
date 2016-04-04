@@ -1,4 +1,4 @@
-pbr>=0.6,!=0.7,<1.0
+pbr>=1.8.0,<2.0
 six>=1.5.2
 extras
 python-daemon>=2.0.4
