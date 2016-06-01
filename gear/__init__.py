@@ -797,7 +797,11 @@ class BaseClientServer(object):
         self.log.debug("Marking %s as disconnected" % conn)
         self.connections_condition.acquire()
         try:
-            jobs = conn.related_jobs.values()
+            # NOTE(notmorgan): In the loop below it is possible to change the
+            # jobs list on the connection. In python 3 .values() is an iter not
+            # a static list, meaning that a change will break the for loop
+            # as the object being iterated on will have changed in size.
+            jobs = list(conn.related_jobs.values())
             if conn in self.active_connections:
                 self.active_connections.remove(conn)
             if conn not in self.inactive_connections:
@@ -2683,7 +2687,11 @@ class Server(BaseClientServer):
         self.connections_condition.acquire()
         self._unregisterConnection(conn)
         try:
-            jobs = conn.related_jobs.values()
+            # NOTE(notmorgan): In the loop below it is possible to change the
+            # jobs list on the connection. In python 3 .values() is an iter not
+            # a static list, meaning that a change will break the for loop
+            # as the object being iterated on will have changed in size.
+            jobs = list(conn.related_jobs.values())
             if conn in self.active_connections:
                 self.active_connections.remove(conn)
         finally:
