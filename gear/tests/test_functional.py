@@ -14,11 +14,13 @@
 # limitations under the License.
 
 import os
+import threading
 import time
 
 from OpenSSL import crypto
 import fixtures
 import testscenarios
+import testtools
 
 import gear
 from gear import tests
@@ -124,6 +126,16 @@ class TestFunctional(tests.BaseTestCase):
                     break
             self.assertTrue(job.complete)
             self.assertEqual(job.data, [b'workdata'])
+
+    def test_worker_termination(self):
+        def getJob():
+            with testtools.ExpectedException(gear.InterruptedError):
+                self.worker.getJob()
+        self.worker.registerFunction('test')
+        jobthread = threading.Thread(target=getJob)
+        jobthread.daemon = True
+        jobthread.start()
+        self.worker.stopWaitingForJobs()
 
 
 def load_tests(loader, in_tests, pattern):
