@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 # Copyright 2013 OpenStack Foundation
 #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -127,8 +126,3 @@ def main():
         pid = pid_file_module.TimeoutPIDLockFile(server.args.pidfile, 10)
         with daemon.DaemonContext(pidfile=pid):
             server.main()
-
-
-if __name__ == "__main__":
-    sys.path.insert(0, '.')
-    main()
