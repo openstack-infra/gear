@@ -2937,7 +2937,7 @@ class Server(BaseClientServer):
         functions = self._getFunctionStats()
         for name, values in functions.items():
             request.connection.sendRaw(("%s\t%s\t%s\t%s\n" %
-                                       (name, values[0], values[1],
+                                       (name.decode('utf-8'), values[0], values[1],
                                         values[2])).encode('utf8'))
         request.connection.sendRaw(b'.\n')
 
