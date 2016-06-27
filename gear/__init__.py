@@ -2424,6 +2424,10 @@ class Server(BaseClientServer):
         access control rules to its connections.
     :arg str host: Host name or IPv4/IPv6 address to bind to.  Defaults
         to "whatever getaddrinfo() returns", which might be IPv4-only.
+    :arg bool keepalive: Whether to use TCP keepalives
+    :arg int tcp_keepidle: Idle time after which to start keepalives sending
+    :arg int tcp_keepintvl: Interval in seconds between TCP keepalives
+    :arg int tcp_keepcnt: Count of TCP keepalives to send before disconnect
     """
 
     edge_bitmask = select.EPOLLET
@@ -2433,7 +2437,8 @@ class Server(BaseClientServer):
 
     def __init__(self, port=4730, ssl_key=None, ssl_cert=None, ssl_ca=None,
                  statsd_host=None, statsd_port=8125, statsd_prefix=None,
-                 server_id=None, acl=None, host=None):
+                 server_id=None, acl=None, host=None, keepalive=False,
+                 tcp_keepidle=7200, tcp_keepintvl=75, tcp_keepcnt=9):
         self.port = port
         self.ssl_key = ssl_key
         self.ssl_cert = ssl_cert
@@ -2462,6 +2467,15 @@ class Server(BaseClientServer):
                 self.socket = socket.socket(af, socktype, proto)
                 self.socket.setsockopt(socket.SOL_SOCKET,
                                        socket.SO_REUSEADDR, 1)
+                if keepalive:
+                    self.socket.setsockopt(socket.SOL_SOCKET,
+                                           socket.SO_KEEPALIVE, 1)
+                    self.socket.setsockopt(socket.IPPROTO_TCP,
+                                           socket.TCP_KEEPIDLE, tcp_keepidle)
+                    self.socket.setsockopt(socket.IPPROTO_TCP,
+                                           socket.TCP_KEEPINTVL, tcp_keepintvl)
+                    self.socket.setsockopt(socket.IPPROTO_TCP,
+                                           socket.TCP_KEEPCNT, tcp_keepcnt)
             except socket.error:
                 self.socket = None
                 continue
