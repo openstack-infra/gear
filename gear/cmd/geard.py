@@ -60,6 +60,18 @@ support.
                             help='path to SSL private key')
         parser.add_argument('--acl', dest='acl', metavar='PATH',
                             help='path to ACL file')
+        parser.add_argument('--keepalive', dest='keepalive', default=False,
+                            action='store_true',
+                            help='enable TCP keepalives in socket')
+        parser.add_argument('--keepalive-idle', dest='tcp_keepidle', type=int,
+                            default=7200, action='store',
+                            help='TCP keepalive idle time')
+        parser.add_argument('--keepalive-interval', dest='tcp_keepintvl', type=int,
+                            default=75, action='store',
+                            help='TCP keepalive probe interval')
+        parser.add_argument('--keepalive-count', dest='tcp_keepcnt', type=int,
+                            default=9, action='store',
+                            help='TCP keepalive probes count')
         parser.add_argument('--version', dest='version', action='store_true',
                             help='show version')
         self.args = parser.parse_args()
@@ -109,7 +121,12 @@ support.
                                   statsd_host,
                                   statsd_port,
                                   statsd_prefix,
-                                  acl=acl)
+                                  acl=acl,
+                                  keepalive=self.args.keepalive,
+                                  tcp_keepidle=self.args.tcp_keepidle,
+                                  tcp_keepintvl=self.args.tcp_keepintvl,
+                                  tcp_keepcnt=self.args.tcp_keepcnt
+                                  )
         signal.pause()
 
 
