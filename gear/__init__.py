@@ -2338,28 +2338,32 @@ class NonBlockingConnection(Connection):
 
     def sendQueuedData(self):
         """Send previously queued data to the socket."""
-        while len(self.send_queue):
-            data = self.send_queue.pop(0)
-            r = 0
-            try:
-                r = self.conn.send(data)
-            except ssl.SSLError as e:
-                if e.errno == ssl.SSL_ERROR_WANT_READ:
-                    raise RetryIOError()
-                elif e.errno == ssl.SSL_ERROR_WANT_WRITE:
-                    raise RetryIOError()
-                else:
-                    raise
-            except socket.error as e:
-                if e.errno == errno.EAGAIN:
-                    self.log.debug("Write operation on %s would block"
-                                   % self)
-                else:
-                    raise
-            finally:
-                data = data[r:]
-                if data:
-                    self.send_queue.insert(0, data)
+        try:
+            while len(self.send_queue):
+                data = self.send_queue.pop(0)
+                r = 0
+                try:
+                    r = self.conn.send(data)
+                except ssl.SSLError as e:
+                    if e.errno == ssl.SSL_ERROR_WANT_READ:
+                        raise RetryIOError()
+                    elif e.errno == ssl.SSL_ERROR_WANT_WRITE:
+                        raise RetryIOError()
+                    else:
+                        raise
+                except socket.error as e:
+                    if e.errno == errno.EAGAIN:
+                        self.log.debug("Write operation on %s would block"
+                                       % self)
+                        raise RetryIOError()
+                    else:
+                        raise
+                finally:
+                    data = data[r:]
+                    if data:
+                        self.send_queue.insert(0, data)
+        except RetryIOError:
+            pass
 
 
 class ServerConnection(NonBlockingConnection):
