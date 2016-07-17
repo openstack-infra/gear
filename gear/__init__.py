@@ -314,7 +314,8 @@ class Connection(object):
                         admin_request = self._getAdminRequest()
                 if admin:
                     complete, remainder = admin_request.isComplete(raw_bytes)
-                    raw_bytes = remainder
+                    if remainder is not None:
+                        raw_bytes = remainder
                     if complete:
                         return admin_request
                 else:
@@ -431,6 +432,7 @@ class AdminRequest(object):
     command = None
     arguments = []
     response = None
+    _complete_position = 0
 
     def __init__(self, *arguments):
         self.wait_event = threading.Event()
@@ -451,8 +453,10 @@ class AdminRequest(object):
 
     def isComplete(self, data):
         x = -1
-        end_index_newline = data.find(b'\n.\n')
-        end_index_return = data.find(b'\r\n.\r\n')
+        start = self._complete_position
+        start = max(self._complete_position - 4, 0)
+        end_index_newline = data.find(b'\n.\n', start)
+        end_index_return = data.find(b'\r\n.\r\n', start)
         if end_index_newline != -1:
             x = end_index_newline + 3
         elif end_index_return != -1:
@@ -461,11 +465,12 @@ class AdminRequest(object):
             x = 2
         elif data.startswith(b'.\r\n'):
             x = 3
+        self._complete_position = len(data)
         if x != -1:
             self.response = data[:x]
             return (True, data[x:])
         else:
-            return (False, data)
+            return (False, None)
 
     def setComplete(self):
         self.wait_event.set()
@@ -530,7 +535,7 @@ class CancelJobAdminRequest(AdminRequest):
             self.response = data[:x]
             return (True, data[x:])
         else:
-            return (False, data)
+            return (False, None)
 
 
 class VersionAdminRequest(AdminRequest):
@@ -551,7 +556,7 @@ class VersionAdminRequest(AdminRequest):
             self.response = data[:x]
             return (True, data[x:])
         else:
-            return (False, data)
+            return (False, None)
 
 
 class WorkersAdminRequest(AdminRequest):
@@ -2279,7 +2284,7 @@ class ServerAdminRequest(AdminRequest):
             x = end_index_newline + 1
             return (True, data[x:])
         else:
-            return (False, data)
+            return (False, None)
 
 
 class NonBlockingConnection(Connection):
