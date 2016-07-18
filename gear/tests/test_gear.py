@@ -42,6 +42,35 @@ class ConnectionTestCase(tests.BaseTestCase):
             'host: %s port: %s>' % (self.host, self.port)))
 
 
+class AdminRequestTestCase(tests.BaseTestCase):
+    scenarios = [
+        ('empty newline', dict(response=b'.\n', remainder=b'')),
+        ('empty return', dict(response=b'.\r\n', remainder=b'')),
+        ('data newline', dict(response=b'foo\n.\n', remainder=b'')),
+        ('data return', dict(response=b'foo\r\n.\r\n', remainder=b'')),
+        ('pipeline newline', dict(response=b'foo\n.\nbar',
+                                  remainder=b'bar')),
+        ('pipeline return', dict(response=b'foo\r\n.\r\nbar',
+                                 remainder=b'bar')),
+    ]
+
+    def test_full_packet(self):
+        req = gear.StatusAdminRequest()
+        ret = req.isComplete(self.response)
+        self.assertTrue(ret[0])
+        self.assertEqual(ret[1], self.remainder)
+
+    def test_partial_packet(self):
+        req = gear.StatusAdminRequest()
+        for i in range(len(self.response)-len(self.remainder)):
+            ret = req.isComplete(self.response[:i])
+            self.assertFalse(ret[0])
+            self.assertIsNone(ret[1])
+        ret = req.isComplete(self.response)
+        self.assertTrue(ret[0])
+        self.assertEqual(ret[1], self.remainder)
+
+
 class TestConnection(tests.BaseTestCase):
 
     def setUp(self):
