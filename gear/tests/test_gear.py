@@ -232,6 +232,12 @@ class TestServerConnection(tests.BaseTestCase):
 
 class TestClient(tests.BaseTestCase):
 
+    def test_wait_for_server_timeout(self):
+        client = gear.Client('client')
+        client.addServer('127.0.0.1', 0)
+        self.assertRaises(gear.TimeoutError,
+                          client.waitForServer, timeout=1)
+
     def test_handleStatusRes_1(self):
         client = gear.Client()
 
