@@ -62,7 +62,7 @@ class AdminRequestTestCase(tests.BaseTestCase):
 
     def test_partial_packet(self):
         req = gear.StatusAdminRequest()
-        for i in range(len(self.response)-len(self.remainder)):
+        for i in range(len(self.response) - len(self.remainder)):
             ret = req.isComplete(self.response[:i])
             self.assertFalse(ret[0])
             self.assertIsNone(ret[1])

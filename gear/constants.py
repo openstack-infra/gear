@@ -41,7 +41,7 @@ types = {
     2: 'CANT_DO',
     3: 'RESET_ABILITIES',
     4: 'PRE_SLEEP',
-    #unused
+    # unused
     6: 'NOOP',
     7: 'SUBMIT_JOB',
     8: 'JOB_CREATED',
