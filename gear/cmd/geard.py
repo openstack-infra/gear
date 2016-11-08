@@ -66,8 +66,8 @@ support.
         parser.add_argument('--keepalive-idle', dest='tcp_keepidle', type=int,
                             default=7200, action='store',
                             help='TCP keepalive idle time')
-        parser.add_argument('--keepalive-interval', dest='tcp_keepintvl', type=int,
-                            default=75, action='store',
+        parser.add_argument('--keepalive-interval', dest='tcp_keepintvl',
+                            type=int, default=75, action='store',
                             help='TCP keepalive probe interval')
         parser.add_argument('--keepalive-count', dest='tcp_keepcnt', type=int,
                             default=9, action='store',

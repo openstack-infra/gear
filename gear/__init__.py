@@ -27,9 +27,9 @@ from gear import constants
 from gear.acl import ACLError, ACLEntry, ACL  # noqa
 
 try:
-    import Queue as queue
+    import Queue as queue_mod
 except ImportError:
-    import queue as queue
+    import queue as queue_mod
 
 try:
     import statsd
@@ -608,8 +608,8 @@ class Packet(object):
         if not isinstance(other, Packet):
             return False
         if (self.code == other.code and
-            self.ptype == other.ptype and
-            self.data == other.data):
+                self.ptype == other.ptype and
+                self.data == other.data):
             return True
         return False
 
@@ -1286,7 +1286,7 @@ class BaseClient(BaseClientServer):
         except Exception:
             self.log.exception("Exception while sending packet %s to %s" %
                                (packet, connection))
-                # If we can't send the packet, discard the connection
+            # If we can't send the packet, discard the connection
             self._lostConnection(connection)
             raise
 
@@ -1718,7 +1718,7 @@ class Worker(BaseClient):
         self.functions = {}
         self.job_lock = threading.Lock()
         self.waiting_for_jobs = 0
-        self.job_queue = queue.Queue()
+        self.job_queue = queue_mod.Queue()
 
     def __repr__(self):
         return '<gear.Worker 0x%x>' % id(self)
@@ -1885,7 +1885,7 @@ class Worker(BaseClient):
 
             try:
                 job = self.job_queue.get(False)
-            except queue.Empty:
+            except queue_mod.Empty:
                 job = None
 
             if not job:
@@ -2046,7 +2046,7 @@ class BaseJob(object):
     def __init__(self, name, arguments, unique=None, handle=None):
         self.name = convert_to_bytes(name)
         if (not isinstance(arguments, bytes) and
-            not isinstance(arguments, bytearray)):
+                not isinstance(arguments, bytearray)):
             raise TypeError("arguments must be of type bytes or bytearray")
         self.arguments = arguments
         self.unique = convert_to_bytes(unique)
@@ -2972,9 +2972,10 @@ class Server(BaseClientServer):
     def handleStatus(self, request):
         functions = self._getFunctionStats()
         for name, values in functions.items():
-            request.connection.sendRaw(("%s\t%s\t%s\t%s\n" %
-                                       (name.decode('utf-8'), values[0], values[1],
-                                        values[2])).encode('utf8'))
+            request.connection.sendRaw(
+                ("%s\t%s\t%s\t%s\n" %
+                 (name.decode('utf-8'), values[0], values[1],
+                  values[2])).encode('utf8'))
         request.connection.sendRaw(b'.\n')
 
     def handleWorkers(self, request):
@@ -2999,7 +3000,7 @@ class Server(BaseClientServer):
         for connection in self.active_connections:
             if connection.state == 'SLEEP':
                 if ((job and job.name in connection.functions) or
-                    (job is None)):
+                        (job is None)):
                     connection.changeState("AWAKE")
                     connection.sendPacket(p)
 

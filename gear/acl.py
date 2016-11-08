@@ -56,8 +56,8 @@ class ACLEntry(object):
         :returns: False if any permission is granted, otherwise True.
         """
         if (self.register is None and
-            self.invoke is None and
-            self.grant is False):
+                self.invoke is None and
+                self.grant is False):
             return True
         return False
 
