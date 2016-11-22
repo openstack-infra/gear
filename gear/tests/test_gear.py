@@ -110,11 +110,11 @@ class TestConnection(tests.BaseTestCase):
         self.conn.admin_requests.append(req)
         self.socket._set_data([p1.toBinary() + response + p2.toBinary()])
         r1 = self.conn.readPacket()
-        self.assertEquals(r1, p1)
+        self.assertEqual(r1, p1)
         ra = self.conn.readPacket()
         self.assertEqual(ra.response, response)
         r2 = self.conn.readPacket()
-        self.assertEquals(r2, p2)
+        self.assertEqual(r2, p2)
         self.assertEndOfData()
 
     def test_readPacket_large(self):
@@ -125,7 +125,7 @@ class TestConnection(tests.BaseTestCase):
         )
         self.socket._set_data([p1.toBinary()])
         r1 = self.conn.readPacket()
-        self.assertEquals(r1, p1)
+        self.assertEqual(r1, p1)
         self.assertEndOfData()
 
     def test_readPacket_multi_pdu(self):
@@ -143,10 +143,10 @@ class TestConnection(tests.BaseTestCase):
                                p1.toBinary()[1448:] + p2.toBinary()])
         # First packet
         r1 = self.conn.readPacket()
-        self.assertEquals(r1, p1)
+        self.assertEqual(r1, p1)
         # Second packet
         r2 = self.conn.readPacket()
-        self.assertEquals(r2, p2)
+        self.assertEqual(r2, p2)
         self.assertEndOfData()
 
 
@@ -187,11 +187,11 @@ class TestServerConnection(tests.BaseTestCase):
         )
         self.socket._set_data([p1.toBinary() + command + p2.toBinary()])
         r1 = self.conn.readPacket()
-        self.assertEquals(r1, p1)
+        self.assertEqual(r1, p1)
         ra = self.conn.readPacket()
         self.assertEqual(ra.command, command.strip())
         r2 = self.conn.readPacket()
-        self.assertEquals(r2, p2)
+        self.assertEqual(r2, p2)
         self.assertEndOfData()
 
     def test_readPacket_large(self):
@@ -202,7 +202,7 @@ class TestServerConnection(tests.BaseTestCase):
         )
         self.socket._set_data([p1.toBinary()])
         r1 = self.conn.readPacket()
-        self.assertEquals(r1, p1)
+        self.assertEqual(r1, p1)
         self.assertEndOfData()
 
     def test_readPacket_multi_pdu(self):
@@ -223,10 +223,10 @@ class TestServerConnection(tests.BaseTestCase):
             self.conn.readPacket()
         # Second half of first packet
         r1 = self.conn.readPacket()
-        self.assertEquals(r1, p1)
+        self.assertEqual(r1, p1)
         # Second packet
         r2 = self.conn.readPacket()
-        self.assertEquals(r2, p2)
+        self.assertEqual(r2, p2)
         self.assertEndOfData()
 
 
