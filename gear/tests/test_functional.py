@@ -16,6 +16,7 @@
 import os
 import threading
 import time
+import uuid
 
 from OpenSSL import crypto
 import fixtures
@@ -147,6 +148,80 @@ class TestFunctional(tests.BaseTestCase):
 
             workerjob = self.worker.getJob()
             self.assertEqual('test', workerjob.name)
+
+
+class TestFunctionalText(tests.BaseTestCase):
+    def setUp(self):
+        super(TestFunctionalText, self).setUp()
+        self.server = gear.Server(0)
+        self.client = gear.Client('client')
+        self.worker = gear.TextWorker('worker')
+        self.client.addServer('127.0.0.1', self.server.port)
+        self.worker.addServer('127.0.0.1', self.server.port)
+        self.client.waitForServer()
+        self.worker.waitForServer()
+
+    def test_text_job(self):
+        self.worker.registerFunction('test')
+
+        for jobcount in range(2):
+            job = gear.TextJob('test', 'testdata')
+            self.client.submitJob(job)
+            self.assertNotEqual(job.handle, None)
+
+            workerjob = self.worker.getJob()
+            self.assertEqual(workerjob.handle, job.handle)
+            self.assertEqual(workerjob.arguments, 'testdata')
+            workerjob.sendWorkData('workdata')
+            workerjob.sendWorkComplete()
+
+            for count in iterate_timeout(30, "job completion"):
+                if job.complete:
+                    break
+            self.assertTrue(job.complete)
+            self.assertEqual(job.data, ['workdata'])
+
+    def test_text_job_unique(self):
+        self.worker.registerFunction('test')
+
+        for jobcount in range(2):
+            jobunique = uuid.uuid4().hex
+            job = gear.TextJob('test', 'testdata', unique=jobunique)
+            self.client.submitJob(job)
+            self.assertNotEqual(job.handle, None)
+
+            workerjob = self.worker.getJob()
+            self.assertEqual(workerjob.handle, job.handle)
+            self.assertEqual(workerjob.arguments, 'testdata')
+            workerjob.sendWorkData('workdata')
+            workerjob.sendWorkComplete()
+
+            for count in iterate_timeout(30, "job completion"):
+                if job.complete:
+                    break
+            self.assertTrue(job.complete)
+            self.assertEqual(job.data, ['workdata'])
+            self.assertEqual(job.unique, jobunique)
+            self.assertEqual(workerjob.unique, jobunique)
+
+    def test_text_job_exception(self):
+        self.worker.registerFunction('test')
+
+        for jobcount in range(2):
+            job = gear.TextJob('test', 'testdata')
+            self.client.submitJob(job)
+            self.assertNotEqual(job.handle, None)
+
+            workerjob = self.worker.getJob()
+            self.assertEqual(workerjob.handle, job.handle)
+            self.assertEqual(workerjob.arguments, 'testdata')
+            workerjob.sendWorkException('work failed')
+
+            for count in iterate_timeout(30, "job completion"):
+                if job.complete:
+                    break
+            self.assertTrue(job.complete)
+            self.assertEqual(job.exception, 'work failed')
 
 
 def load_tests(loader, in_tests, pattern):
