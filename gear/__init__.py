@@ -16,6 +16,7 @@ import errno
 import logging
 import os
 import select
+import six
 import socket
 import ssl
 import struct
@@ -1426,7 +1427,7 @@ class Client(BaseClient):
             unique = b''
         else:
             unique = job.unique
-        data = b'\x00'.join((job.name, unique, job.arguments))
+        data = b'\x00'.join((job.binary_name, unique, job.arguments))
         if background:
             if precedence == PRECEDENCE_NORMAL:
                 cmd = constants.SUBMIT_JOB_BG
@@ -2044,7 +2045,7 @@ class Worker(BaseClient):
 
 class BaseJob(object):
     def __init__(self, name, arguments, unique=None, handle=None):
-        self.name = convert_to_bytes(name)
+        self._name = convert_to_bytes(name)
         if (not isinstance(arguments, bytes) and
                 not isinstance(arguments, bytearray)):
             raise TypeError("arguments must be of type bytes or bytearray")
@@ -2052,6 +2053,22 @@ class BaseJob(object):
         self.unique = convert_to_bytes(unique)
         self.handle = handle
         self.connection = None
+
+    @property
+    def name(self):
+        if isinstance(self._name, six.binary_type):
+            return self._name.decode('utf-8')
+        return self._name
+
+    @name.setter
+    def name(self, value):
+        if isinstance(value, six.text_type):
+            value = value.encode('utf-8')
+        self._name = value
+
+    @property
+    def binary_name(self):
+        return self._name
 
     def __repr__(self):
         return '<gear.Job 0x%x handle: %s name: %s unique: %s>' % (
@@ -2070,7 +2087,7 @@ class Job(BaseJob):
     The following instance attributes are available:
 
     **name** (str)
-        The name of the job.
+        The name of the job. Assumed to be utf-8.
     **arguments** (bytes)
         The opaque data blob passed to the worker as arguments.
     **unique** (str or None)
@@ -2139,7 +2156,7 @@ class WorkerJob(BaseJob):
     The following instance attributes are available:
 
     **name** (str)
-        The name of the job.
+        The name of the job. Assumed to be utf-8.
     **arguments** (bytes)
         The opaque data blob passed to the worker as arguments.
     **unique** (str or None)
@@ -2218,8 +2235,25 @@ class WorkerJob(BaseJob):
         self.connection.sendPacket(p)
 
 
+class BaseBinaryJob(object):
+    """ For the case where non-utf-8 job names are needed. It will function
+    exactly like Job, except that the job name will not be decoded."""
+
+    @property
+    def name(self):
+        return self._name
+
+
+class BinaryWorkerJob(BaseBinaryJob, WorkerJob):
+    pass
+
+
+class BinaryJob(BaseBinaryJob, Job):
+    pass
+
+
 # Below are classes for use in the server implementation:
-class ServerJob(Job):
+class ServerJob(BinaryJob):
     """A job record for use in a server.
 
     :arg str name: The name of the job.

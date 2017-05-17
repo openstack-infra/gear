@@ -137,6 +137,17 @@ class TestFunctional(tests.BaseTestCase):
         jobthread.start()
         self.worker.stopWaitingForJobs()
 
+    def test_text_job_name(self):
+        self.worker.registerFunction('test')
+
+        for jobcount in range(2):
+            job = gear.Job('test', b'testdata')
+            self.client.submitJob(job)
+            self.assertNotEqual(job.handle, None)
+
+            workerjob = self.worker.getJob()
+            self.assertEqual('test', workerjob.name)
+
 
 def load_tests(loader, in_tests, pattern):
     return testscenarios.load_tests_apply_scenarios(loader, in_tests, pattern)
