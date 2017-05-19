@@ -2291,7 +2291,7 @@ class Job(BaseJob):
 
     @exception.setter
     def exception(self, value):
-        self._data = value
+        self._exception = value
 
 
 class TextJobArguments(object):
