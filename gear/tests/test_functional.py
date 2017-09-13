@@ -128,6 +128,21 @@ class TestFunctional(tests.BaseTestCase):
             self.assertTrue(job.complete)
             self.assertEqual(job.data, [b'workdata'])
 
+    def test_bg_job(self):
+        self.worker.registerFunction('test')
+
+        job = gear.Job(b'test', b'testdata')
+        self.client.submitJob(job, background=True)
+        self.assertNotEqual(job.handle, None)
+        self.client.shutdown()
+        del self.client
+
+        workerjob = self.worker.getJob()
+        self.assertEqual(workerjob.handle, job.handle)
+        self.assertEqual(workerjob.arguments, b'testdata')
+        workerjob.sendWorkData(b'workdata')
+        workerjob.sendWorkComplete()
+
     def test_worker_termination(self):
         def getJob():
             with testtools.ExpectedException(gear.InterruptedError):
