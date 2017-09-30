@@ -142,6 +142,7 @@ class Connection(object):
         self.input_buffer = b''
         self.need_bytes = False
         self.echo_lock = threading.Lock()
+        self.send_lock = threading.Lock()
         self._init()
 
     def _init(self):
@@ -237,17 +238,18 @@ class Connection(object):
 
         :arg bytes data The raw data to send
         """
-        while True:
-            try:
-                self.conn.send(data)
-            except ssl.SSLError as e:
-                if e.errno == ssl.SSL_ERROR_WANT_READ:
-                    continue
-                elif e.errno == ssl.SSL_ERROR_WANT_WRITE:
-                    continue
-                else:
-                    raise
-            break
+        with self.send_lock:
+            sent = 0
+            while sent < len(data):
+                try:
+                    sent += self.conn.send(data)
+                except ssl.SSLError as e:
+                    if e.errno == ssl.SSL_ERROR_WANT_READ:
+                        continue
+                    elif e.errno == ssl.SSL_ERROR_WANT_WRITE:
+                        continue
+                    else:
+                        raise
 
     def sendPacket(self, packet):
         """Send a packet to the server.
