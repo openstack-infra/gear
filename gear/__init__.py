@@ -2714,6 +2714,9 @@ class Server(BaseClientServer):
         self.normal_queue = []
         self.low_queue = []
         self.jobs = {}
+        self.running_jobs = 0
+        self.waiting_jobs = 0
+        self.total_jobs = 0
         self.functions = set()
         self.max_handle = 0
         self.acl = acl
@@ -3039,6 +3042,11 @@ class Server(BaseClientServer):
             # A specific queue was supplied
             dequeue.remove(job)
         # If dequeue is false, no need to remove from any queue
+        self.total_jobs -= 1
+        if job.running:
+            self.running_jobs -= 1
+        else:
+            self.waiting_jobs -= 1
 
     def getQueue(self):
         """Returns a copy of all internal queues in a flattened form.
@@ -3278,32 +3286,9 @@ class Server(BaseClientServer):
         # prefix.queue.total
         # prefix.queue.running
         # prefix.queue.waiting
-        # prefix.workers
-        base_key = 'queue'
-        total = 0
-        running = 0
-        waiting = 0
-        for job in self.jobs.values():
-            total += 1
-            if job.running:
-                running += 1
-            else:
-                waiting += 1
-
-        key = '.'.join([base_key, 'total'])
-        self.statsd.gauge(key, total)
-
-        key = '.'.join([base_key, 'running'])
-        self.statsd.gauge(key, running)
-
-        key = '.'.join([base_key, 'waiting'])
-        self.statsd.gauge(key, waiting)
-
-        workers = 0
-        for connection in self.active_connections:
-            if connection.functions:
-                workers += 1
-        self.statsd.gauge('workers', workers)
+        self.statsd.gauge('queue.total', self.total_jobs)
+        self.statsd.gauge('queue.running', self.running_jobs)
+        self.statsd.gauge('queue.waiting', self.waiting_jobs)
 
     def _handleSubmitJob(self, packet, precedence, background=False):
         name = packet.getArgument(0)
@@ -3330,6 +3315,8 @@ class Server(BaseClientServer):
         p = Packet(constants.RES, constants.JOB_CREATED, handle)
         packet.connection.sendPacket(p)
         self.jobs[handle] = job
+        self.total_jobs += 1
+        self.waiting_jobs += 1
         if not background:
             packet.connection.related_jobs[handle] = job
         if precedence == PRECEDENCE_HIGH:
@@ -3369,6 +3356,8 @@ class Server(BaseClientServer):
                         connection.related_jobs[job.handle] = job
                         job.worker_connection = connection
                         job.running = True
+                        self.waiting_jobs -= 1
+                        self.running_jobs += 1
                         self._updateStats()
                     return job
         return None
