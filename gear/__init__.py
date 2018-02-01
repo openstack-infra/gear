@@ -3238,9 +3238,10 @@ class Server(BaseClientServer):
             fd = connection.conn.fileno()
             ip = connection.host
             client_id = connection.client_id or '-'
-            functions = ' '.join(connection.functions)
+            functions = b' '.join(connection.functions).decode('utf8')
             request.connection.sendRaw(("%s %s %s : %s\n" %
-                                       (fd, ip, client_id, functions))
+                                       (fd, ip, client_id.decode('utf8'),
+                                        functions))
                                        .encode('utf8'))
         request.connection.sendRaw(b'.\n')
 
