@@ -1897,6 +1897,12 @@ class Worker(BaseClient):
         else:
             self._sendCanDo(name)
 
+        connections = self.active_connections[:]
+        for connection in connections:
+            if connection.state == "SLEEP":
+                connection.changeState("IDLE")
+        self._updateStateMachines()
+
     def unRegisterFunction(self, name):
         """Remove a function from Gearman's registry.
 
