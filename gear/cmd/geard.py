@@ -47,6 +47,9 @@ support.
                             help='do not run as a daemon')
         parser.add_argument('-p', dest='port', default=4730,
                             help='port on which to listen')
+        parser.add_argument('--listen-address', dest='listen_address',
+                            default=None,
+                            help='IP address or domain name to listen on')
         parser.add_argument('--log-config', dest='log_config',
                             help='logging config file')
         parser.add_argument('--pidfile', dest='pidfile',
@@ -122,6 +125,7 @@ support.
                                   statsd_port,
                                   statsd_prefix,
                                   acl=acl,
+                                  host=self.args.listen_address,
                                   keepalive=self.args.keepalive,
                                   tcp_keepidle=self.args.tcp_keepidle,
                                   tcp_keepintvl=self.args.tcp_keepintvl,
