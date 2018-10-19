@@ -2735,9 +2735,14 @@ class Server(BaseClientServer):
         if all([self.ssl_key, self.ssl_cert, self.ssl_ca]):
             self.use_ssl = True
 
-        for res in socket.getaddrinfo(host, self.port, socket.AF_UNSPEC,
-                                      socket.SOCK_STREAM, 0,
-                                      socket.AI_PASSIVE):
+        # Get all valid passive listen addresses, then sort by family to prefer
+        # ipv6 if available.
+        addrs = socket.getaddrinfo(host, self.port, socket.AF_UNSPEC,
+                                   socket.SOCK_STREAM, 0,
+                                   socket.AI_PASSIVE |
+                                   socket.AI_ADDRCONFIG)
+        addrs.sort(key=lambda addr: addr[0], reverse=True)
+        for res in addrs:
             af, socktype, proto, canonname, sa = res
             try:
                 self.socket = socket.socket(af, socktype, proto)
